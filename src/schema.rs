@@ -54,6 +54,8 @@ impl From<i64> for Phase {
 pub struct Sprite {
     #[graphql(description="Action of this sprite.")]
     action: String,
+    #[graphql(description="Whether or not this sprite is locked and requires special permissions to be updated.")]
+    locked: bool,
     #[graphql(description="URL to the sprite sheet containing the actual frames for the animation.")]
     anim_url: String,
     #[graphql(description="URL to the sprite sheet containing the sprite offset pixels for each frame.")]
@@ -67,6 +69,8 @@ pub struct Sprite {
 pub struct CopyOf {
     #[graphql(description="Action of this sprite.")]
     action: String,
+    #[graphql(description="Whether or not this sprite is locked and requires special permissions to be updated.")]
+    locked: bool,
     #[graphql(description="Which action this sprite is a copy of.")]
     copy_of: String
 }
@@ -81,7 +85,11 @@ enum SpriteUnion {
 #[derive(GraphQLObject)]
 #[graphql(description="A single portrait for a single emotion.")]
 pub struct Portrait {
+    #[graphql(description="Name of the emotion.")]
     emotion: String,
+    #[graphql(description="Whether or not this sprite is locked and requires special permissions to be updated.")]
+    locked: bool,
+    #[graphql(description="URL to the portraits.")]
     url: String
 }
 
@@ -185,51 +193,41 @@ impl<'a> MonsterFormPortraits<'a> {
 
     #[graphql(description="A list of all existing portraits for the emotions.")]
     fn emotions(&self, context: &Context) -> Vec<Portrait> {
-        self.0.portrait_files.iter().filter_map(|(emotion, status)| if *status {
-            Some(Portrait {
+        self.0.portrait_files.iter().map(|(emotion, locked)|
+            Portrait {
                 emotion: emotion.clone(),
+                locked: *locked,
                 url: get_url(AssetType::Portrait(emotion), &context.this_server_url, self.1, self.2)
-            })
-        } else {
-            None
-        }).collect()
+            }).collect()
     }
 
     #[graphql(description="A single portrait for a given emotion.")]
     fn emotion(&self, context: &Context, emotion: String) -> Option<Portrait> {
         self.0.portrait_files.get(&emotion)
-            .and_then(|status| if *status {
-                Some(Portrait {
-                    emotion: emotion.clone(),
-                    url: get_url(AssetType::Portrait(&emotion), &context.this_server_url, self.1, self.2)
-                })
-            } else {
-                None
+            .map(|locked| Portrait {
+                emotion: emotion.clone(),
+                locked: *locked,
+                url: get_url(AssetType::Portrait(&emotion), &context.this_server_url, self.1, self.2)
             })
     }
 
     #[graphql(description="A list of all existing flipped portraits for the emotions.")]
     fn emotions_flipped(&self, context: &Context) -> Vec<Portrait> {
-        self.0.portrait_files.iter().filter_map(|(emotion, status)| if *status {
-            Some(Portrait {
+        self.0.portrait_files.iter().map(|(emotion, locked)|
+            Portrait {
                 emotion: emotion.clone(),
+                locked: *locked,
                 url: get_url(AssetType::PortraitFlipped(emotion), &context.this_server_url, self.1, self.2)
-            })
-        } else {
-            None
-        }).collect()
+            }).collect()
     }
 
     #[graphql(description="A single flipped portrait for a given emotion.")]
     fn emotion_flipped(&self, context: &Context, emotion: String) -> Option<Portrait> {
         self.0.portrait_files.get(&emotion)
-            .and_then(|status| if *status {
-                Some(Portrait {
-                    url: get_url(AssetType::PortraitFlipped(&emotion), &context.this_server_url, self.1, self.2),
-                    emotion,
-                })
-            } else {
-                None
+            .map(|locked| Portrait {
+                emotion: emotion.clone(),
+                locked: *locked,
+                url: get_url(AssetType::PortraitFlipped(&emotion), &context.this_server_url, self.1, self.2)
             })
     }
 
@@ -242,22 +240,20 @@ impl<'a> MonsterFormPortraits<'a> {
 pub struct MonsterFormSprites<'a>(&'a Group, i32, &'a [i32]);
 
 impl<'a> MonsterFormSprites<'a> {
-    fn process_sprite_action(&self, action: &str, status: bool, action_copy_map: &HashMap<String, String>, this_server_url: &str) -> Option<SpriteUnion> {
-        if status {
-            Some(match action_copy_map.get(action) {
-                Some(copy_of) => SpriteUnion::CopyOf(CopyOf {
-                    action: action.to_string(),
-                    copy_of: copy_of.to_string(),
-                }),
-                None => SpriteUnion::Sprite(Sprite {
-                    anim_url: get_url(AssetType::SpriteAnim(action), this_server_url, self.1, self.2),
-                    offsets_url: get_url(AssetType::SpriteOffsets(action), this_server_url, self.1, self.2),
-                    shadows_url: get_url(AssetType::SpriteShadows(action), this_server_url, self.1, self.2),
-                    action: action.to_string(),
-                })
+    fn process_sprite_action(&self, action: &str, locked: bool, action_copy_map: &HashMap<String, String>, this_server_url: &str) -> SpriteUnion {
+        match action_copy_map.get(action) {
+            Some(copy_of) => SpriteUnion::CopyOf(CopyOf {
+                action: action.to_string(),
+                locked,
+                copy_of: copy_of.to_string(),
+            }),
+            None => SpriteUnion::Sprite(Sprite {
+                anim_url: get_url(AssetType::SpriteAnim(action), this_server_url, self.1, self.2),
+                offsets_url: get_url(AssetType::SpriteOffsets(action), this_server_url, self.1, self.2),
+                shadows_url: get_url(AssetType::SpriteShadows(action), this_server_url, self.1, self.2),
+                action: action.to_string(),
+                locked
             })
-        } else {
-            None
         }
     }
 
@@ -384,7 +380,7 @@ impl<'a> MonsterFormSprites<'a> {
         let action_copy_map = self.get_action_map_blocking(context)?;
         Ok(
             self.0.sprite_files.iter()
-                .filter_map(|(action, status)| self.process_sprite_action(action, *status, &action_copy_map, &context.this_server_url))
+                .map(|(action, locked)| self.process_sprite_action(action, *locked, &action_copy_map, &context.this_server_url))
                 .collect()
         )
     }
@@ -397,7 +393,7 @@ impl<'a> MonsterFormSprites<'a> {
         let action_copy_map = self.get_action_map_blocking(context)?;
         Ok(self.0.sprite_files
             .get(&action)
-            .and_then(|status| self.process_sprite_action(&action, *status, &action_copy_map, &context.this_server_url)))
+            .map(|locked| self.process_sprite_action(&action, *locked, &action_copy_map, &context.this_server_url)))
     }
 
     #[graphql(description="The date and time this sprite set was last updated.")]
