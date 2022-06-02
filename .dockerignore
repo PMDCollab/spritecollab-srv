@@ -1,0 +1,11 @@
+/target
+/workdir
+/.idea
+/.env
+/.env.example
+/Dockerfile
+/docker-compose.yml
+/.git
+/.gitignore
+/.dockerignore
+/build-and-start-docker.sh

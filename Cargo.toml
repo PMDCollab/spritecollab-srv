@@ -1,0 +1,48 @@
+[package]
+name = "spritecollab-srv"
+description = "GraphQL server for interacting with assets and metadata of SpriteCollab."
+authors = ["Marco 'Capypara' Köpcke <hello@capypara.de>"]
+license = "GPL-3.0-or-later"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+discord = ["serenity"]
+
+[dependencies]
+log = "0.4"
+pretty_env_logger = "0.4"
+dotenv = "0.15"
+git2 = "0.13"
+juniper = "0.15"
+hyper = { version = "0.14", features = ["full"] }
+hyper-tls = "0.5"
+juniper_hyper = "0.8"
+tokio = { version = "1.18", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde-xml-rs = "0.5"
+csv = "1.1"
+fred = { version = "5.0", default-features = false }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+regex = "1.5"
+once_cell = "1.12"
+ellipse = "0.2"
+backtrace = "0.3"
+fuzzy-matcher = "0.3"
+itertools = "0.10"
+async-trait = "0.1"
+num-traits = "0.2"
+serenity = { version = "0.11", optional = true, default-features = false, features = [
+    "builder",
+    "cache",
+    "chrono",
+    "client",
+    "gateway",
+    "model",
+    "http",
+    "rustls_backend",
+    "utils",
+] }
