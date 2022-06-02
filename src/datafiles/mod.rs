@@ -53,6 +53,7 @@ pub enum DatafilesReport {
     CreditsDuplicateCreditId(PathBuf, String),
 }
 
+#[cfg(feature = "discord")]
 const DISCORD_UPDATE_INFO: &str = "The data update failed. I will not send any messages about further failures for 12h. I will send a message when the update works again.";
 
 impl DatafilesReport {
@@ -89,6 +90,7 @@ impl DatafilesReport {
         }
     }
 
+    #[cfg(feature = "discord")]
     pub fn format_for_discord(&self) -> (&'static str, String) {
         let title = match self {
             DatafilesReport::Ok => "Failed SpriteCollab Update",

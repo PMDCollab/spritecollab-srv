@@ -175,7 +175,7 @@ impl EventHandler for Handler {
                 Some(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok)) => {
                     // only report if there was a previous failure
                     let mut data = ctx.data.write().await;
-                    let (last_evt, last_time) =
+                    let (last_evt, _last_time) =
                         data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
                     if last_evt.is_some() {
                         self.report(
@@ -197,7 +197,7 @@ impl EventHandler for Handler {
                         || discriminant(last_evt.as_ref().unwrap()) == discriminant(&event)
                     {
                         let now = Utc::now();
-                        if &(now - Duration::hours(REPORT_DATAFILES_COOLDOWN_H)) >= &last_time {
+                        if &(now - Duration::hours(REPORT_DATAFILES_COOLDOWN_H)) >= last_time {
                             self.report(
                                 ReportingEvent::UpdateDatafiles(event.clone()),
                                 &ctx,

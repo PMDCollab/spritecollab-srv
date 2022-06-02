@@ -1,6 +1,7 @@
 use dotenv::dotenv;
 use std::env::var;
 
+#[allow(dead_code)] // discord feature
 pub enum Config {
     Address,
     GitRepo,

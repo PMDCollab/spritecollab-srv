@@ -117,7 +117,6 @@ impl<'a> ReportingEvent {
             ReportingEvent::UpdateDatafiles(DatafilesReport::Ok) => {
                 debug!("Data refresh finished.");
             }
-            ReportingEvent::UpdateDatafiles(DatafilesReport::Ok) => {}
             ReportingEvent::UpdateDatafiles(de) => {
                 error!("Error updating the data files: {}", de.format_short());
             }

@@ -93,7 +93,7 @@ where
         .collect())
 }
 
-fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &String) {
+fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &str) {
     names
         .entry(name.to_lowercase())
         .or_insert_with(Vec::new)
@@ -313,7 +313,7 @@ where
                     .take()
                     .map(|r| (self.map_fn)((Vec::new(), vec![r.name.clone()], r)))
             }
-            None => self.remaining.pop_front().and_then(|(p, mut names, g)| {
+            None => self.remaining.pop_front().and_then(|(p, names, g)| {
                 Self::add_all_sub_groups(&p, &names, g, &mut self.remaining);
                 // if this is a 0 ID don't yield it.
                 if p.last().map(|&idx| idx == 0).unwrap_or(false) {

@@ -795,6 +795,7 @@ impl From<&CreditNamesRow> for Credit {
 pub struct Context {
     this_server_url: String,
     collab: Arc<SpriteCollab>,
+    #[allow(dead_code)] // potentially for future use.
     reporting: Arc<Reporting>,
 }
 
@@ -827,7 +828,7 @@ impl ScCache for Context {
         self.collab
             .cached_may_fail(cache_key, func)
             .await
-            .map_err(|e| {
+            .map_err(|_e| {
                 FieldError::new(
                     "Internal lookup error.",
                     graphql_value!({ "reason": "redis lookup failed. try again." }),
@@ -867,7 +868,7 @@ impl Query {
                         })
                         .await;
                     match r {
-                        Ok(v) if v.len() > 0 => Ok(CacheBehaviour::Cache(v)),
+                        Ok(v) if !v.is_empty() => Ok(CacheBehaviour::Cache(v)),
                         Ok(v) => Ok(CacheBehaviour::NoCache(v)),
                         Err(e) => Err(e),
                     }
@@ -916,7 +917,7 @@ impl Query {
                         .fuzzy_find(&query)
                         .map(Credit::from)
                         .collect();
-                    if r.len() > 0 {
+                    if !r.is_empty() {
                         CacheBehaviour::Cache(r)
                     } else {
                         CacheBehaviour::NoCache(r)

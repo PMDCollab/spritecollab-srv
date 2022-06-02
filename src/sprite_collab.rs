@@ -86,14 +86,12 @@ impl SpriteCollab {
                 panic!("Error initializing data.");
             }));
 
-        let slf_arc = Arc::new(Self {
+        Arc::new(Self {
             state: Mutex::new(State::Ready),
             current_data,
             reporting,
             redis: client,
-        });
-
-        slf_arc
+        })
     }
 
     /// Refreshes the data. Does nothing if already refreshing.
@@ -102,11 +100,13 @@ impl SpriteCollab {
             return;
         }
         if let Some(new_data) = refresh_data(slf.reporting.clone()).await {
-            let mut lock_data = slf.current_data.write().unwrap();
             let mut lock_state = slf.state.lock().await;
-            *lock_data = new_data;
+            {
+                let mut lock_data = slf.current_data.write().unwrap();
+                *lock_data = new_data;
+                *lock_state = State::Ready;
+            }
             let _: Option<()> = slf.redis.flushall(false).await.ok();
-            *lock_state = State::Ready;
         }
     }
 
