@@ -1,53 +1,58 @@
 //! The actual client implementation for SpriteCollab.
-use async_trait::async_trait;
-use std::future::Future;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use crate::cache::ScCache;
+use crate::datafiles::credit_names::{read_credit_names, CreditNames};
+use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
+use crate::datafiles::tracker::{read_tracker, Tracker};
+use crate::datafiles::{read_and_report_error, DatafilesReport};
+use crate::reporting::Reporting;
+use crate::{Config, ReportingEvent};
 use anyhow::Error;
+use async_trait::async_trait;
 use fred::prelude::*;
 use fred::types::RedisKey;
 use git2::build::CheckoutBuilder;
 use git2::Repository;
 use log::{debug, error, info, warn};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
+use std::future::Future;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 use tokio::fs::create_dir_all;
 use tokio::sync::Mutex;
-use crate::cache::ScCache;
-use crate::{Config, ReportingEvent};
-use crate::datafiles::credit_names::{CreditNames, read_credit_names};
-use crate::datafiles::{DatafilesReport, read_and_report_error};
-use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
-use crate::datafiles::tracker::{read_tracker, Tracker};
-use crate::reporting::Reporting;
 
 const GIT_REPO_DIR: &str = "spritecollab";
 
 #[derive(Eq, PartialEq)]
 enum State {
-    Refreshing, Ready
+    Refreshing,
+    Ready,
 }
 
 pub struct SpriteCollabData {
     pub sprite_config: SpriteConfig,
     pub tracker: Arc<Tracker>,
-    pub credit_names: CreditNames
+    pub credit_names: CreditNames,
 }
 
 pub enum CacheBehaviour<T> {
     /// Cache this value.
     Cache(T),
     /// Do not cache this value.
-    NoCache(T)
+    NoCache(T),
 }
 
 impl SpriteCollabData {
-    fn new(sprite_config: SpriteConfig, tracker: Tracker, credit_names: CreditNames) -> SpriteCollabData {
+    fn new(
+        sprite_config: SpriteConfig,
+        tracker: Tracker,
+        credit_names: CreditNames,
+    ) -> SpriteCollabData {
         Self {
             sprite_config,
             tracker: Arc::new(tracker),
-            credit_names
+            credit_names,
         }
     }
 }
@@ -56,35 +61,37 @@ pub struct SpriteCollab {
     state: Mutex<State>,
     current_data: RwLock<SpriteCollabData>,
     reporting: Arc<Reporting>,
-    redis: RedisClient
+    redis: RedisClient,
 }
 
 impl SpriteCollab {
-    pub async fn new((redis_url, redis_port): (String, u16), reporting: Arc<Reporting>) -> Arc<Self> {
-        let config = RedisConfig::from_url(
-            &format!("redis://{}:{}", redis_url, redis_port)
-        ).expect("Invalid Redis config.");
+    pub async fn new(
+        (redis_url, redis_port): (String, u16),
+        reporting: Arc<Reporting>,
+    ) -> Arc<Self> {
+        let config = RedisConfig::from_url(&format!("redis://{}:{}", redis_url, redis_port))
+            .expect("Invalid Redis config.");
         let policy = ReconnectPolicy::new_linear(10, 10000, 1000);
         let client = RedisClient::new(config);
         client.connect(Some(policy));
-        client.wait_for_connect().await.expect("Failed to connect to Redis.");
+        client
+            .wait_for_connect()
+            .await
+            .expect("Failed to connect to Redis.");
         let _: Option<()> = client.flushall(false).await.ok();
         info!("Connected to Redis.");
 
-        let current_data = RwLock::new(
-            refresh_data(reporting.clone()).await.unwrap_or_else(|| {
+        let current_data =
+            RwLock::new(refresh_data(reporting.clone()).await.unwrap_or_else(|| {
                 panic!("Error initializing data.");
-            })
-        );
+            }));
 
-        let slf_arc = Arc::new(
-            Self {
-                state: Mutex::new(State::Ready),
-                current_data,
-                reporting,
-                redis: client
-            }
-        );
+        let slf_arc = Arc::new(Self {
+            state: Mutex::new(State::Ready),
+            current_data,
+            reporting,
+            redis: client,
+        });
 
         slf_arc
     }
@@ -112,13 +119,17 @@ impl SpriteCollab {
 impl ScCache for SpriteCollab {
     type Error = Error;
 
-    async fn cached_may_fail<S, Fn, Ft, T, E>(&self, cache_key: S, func: Fn) -> Result<Result<T, E>, Self::Error>
-        where
-            S: AsRef<str> + Into<RedisKey> + Send + Sync,
-            Fn: (FnOnce() -> Ft) + Send,
-            Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
-            T: DeserializeOwned + Serialize + Send + Sync,
-            E: Send
+    async fn cached_may_fail<S, Fn, Ft, T, E>(
+        &self,
+        cache_key: S,
+        func: Fn,
+    ) -> Result<Result<T, E>, Self::Error>
+    where
+        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        Fn: (FnOnce() -> Ft) + Send,
+        Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
+        T: DeserializeOwned + Serialize + Send + Sync,
+        E: Send,
     {
         let red_val: Option<String> = self.redis.get(cache_key.as_ref()).await?;
         if let Some(red_val) = red_val {
@@ -129,23 +140,30 @@ impl ScCache for SpriteCollab {
                     let save_string = serde_json::to_string(&v);
                     match save_string {
                         Ok(save_string) => {
-                            let r: Result<(), RedisError> = self.redis.set(
-                                cache_key.as_ref(),
-                                save_string,
-                                None, None, false
-                            ).await;
+                            let r: Result<(), RedisError> = self
+                                .redis
+                                .set(cache_key.as_ref(), save_string, None, None, false)
+                                .await;
                             if let Err(err) = r {
-                                warn!("Failed writing cache entry for '{}' to Redis (stage 2): {:?}", cache_key.as_ref(), err);
+                                warn!(
+                                    "Failed writing cache entry for '{}' to Redis (stage 2): {:?}",
+                                    cache_key.as_ref(),
+                                    err
+                                );
                             }
                         }
                         Err(err) => {
-                            warn!("Failed writing cache entry for '{}' to Redis (stage 1): {:?}", cache_key.as_ref(), err);
+                            warn!(
+                                "Failed writing cache entry for '{}' to Redis (stage 1): {:?}",
+                                cache_key.as_ref(),
+                                err
+                            );
                         }
                     }
                     Ok(Ok(v))
-                },
+                }
                 Ok(CacheBehaviour::NoCache(v)) => Ok(Ok(v)),
-                Err(e) => Ok(Err(e))
+                Err(e) => Ok(Err(e)),
             }
         }
     }
@@ -160,7 +178,9 @@ async fn refresh_data(reporting: Arc<Reporting>) -> Option<SpriteCollabData> {
             None
         }
     };
-    reporting.send_event(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok)).await;
+    reporting
+        .send_event(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok))
+        .await;
     r
 }
 
@@ -173,9 +193,19 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
     }
 
     Ok(SpriteCollabData::new(
-        read_and_report_error(&repo_path.join("sprite_config.json"), read_sprite_config, &reporting).await?,
+        read_and_report_error(
+            &repo_path.join("sprite_config.json"),
+            read_sprite_config,
+            &reporting,
+        )
+        .await?,
         read_and_report_error(&repo_path.join("tracker.json"), read_tracker, &reporting).await?,
-        read_and_report_error(&repo_path.join("credit_names.txt"), read_credit_names, &reporting).await?
+        read_and_report_error(
+            &repo_path.join("credit_names.txt"),
+            read_credit_names,
+            &reporting,
+        )
+        .await?,
     ))
 }
 

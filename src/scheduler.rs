@@ -1,11 +1,11 @@
+use crate::SpriteCollab;
+use log::info;
 use std::mem::take;
-use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use log::info;
-use crate::SpriteCollab;
 
 const REFRESH_INTERVAL: u64 = 15 * 60;
 pub struct DataRefreshScheduler(Option<JoinHandle<()>>, Sender<()>);
@@ -22,7 +22,10 @@ impl DataRefreshScheduler {
                 .unwrap();
             rt.block_on(async {
                 loop {
-                    if shutdown_receiver.recv_timeout(Duration::from_secs(REFRESH_INTERVAL)).is_ok() {
+                    if shutdown_receiver
+                        .recv_timeout(Duration::from_secs(REFRESH_INTERVAL))
+                        .is_ok()
+                    {
                         // Sleep was interrupted
                         break;
                     }

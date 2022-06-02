@@ -1,12 +1,12 @@
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Durations {
     #[serde(rename = "$value")]
-    duration: Option<Vec<i64>>
+    duration: Option<Vec<i64>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -27,14 +27,14 @@ pub struct Anim {
 #[serde(rename_all = "PascalCase")]
 pub struct Anims {
     #[serde(rename = "$value")]
-    anim: Vec<Anim>
+    anim: Vec<Anim>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct AnimDataXml {
     shadow_size: i64,
-    anims: Anims
+    anims: Anims,
 }
 
 impl AnimDataXml {
@@ -43,7 +43,8 @@ impl AnimDataXml {
     }
 
     pub fn get_action_copies(&self) -> HashMap<String, String> {
-        self.anims.anim
+        self.anims
+            .anim
             .iter()
             .filter_map(|anim| {
                 anim.copy_of

@@ -1,9 +1,9 @@
+use crate::datafiles::DataReadResult;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use serde::Deserialize;
-use crate::datafiles::DataReadResult;
 
 pub async fn read_sprite_config<P: AsRef<Path>>(path: P) -> DataReadResult<SpriteConfig> {
     let input = File::open(path)?;

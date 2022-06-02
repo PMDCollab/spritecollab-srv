@@ -1,15 +1,15 @@
+use crate::cache::ScCache;
+use crate::datafiles::DataReadResult;
+use crate::search::fuzzy_find;
+use crate::sprite_collab::CacheBehaviour;
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::iter::Peekable;
 use std::path::Path;
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use serde::{Deserialize, Deserializer};
-use serde_json::Value;
-use crate::cache::ScCache;
-use crate::datafiles::DataReadResult;
-use crate::search::fuzzy_find;
-use crate::sprite_collab::CacheBehaviour;
 
 pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
     let input = File::open(path)?;
@@ -53,51 +53,58 @@ pub struct Group {
     pub subgroups: HashMap<i64, Group>,
 }
 
-fn parse_datetime<'de, D>(deser: D) -> Result<Option<DateTime<Utc>>, D::Error> where D: Deserializer<'de> {
+fn parse_datetime<'de, D>(deser: D) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
     let as_str = String::deserialize(deser)?;
     if as_str.is_empty() {
         Ok(None)
     } else {
         NaiveDateTime::parse_from_str(&as_str, "%Y-%m-%d %H:%M:%S%.f")
-            .map(|datetime| {
-                Some(Utc.from_utc_datetime(&datetime))
-            })
+            .map(|datetime| Some(Utc.from_utc_datetime(&datetime)))
             .map_err(serde::de::Error::custom)
     }
 }
 
-pub async fn fuzzy_find_tracker<S, C, E, T, F>(tracker: &Tracker, monster_name: S, cache: &C, consume: F)
-    -> Result<Vec<T>, E>
+pub async fn fuzzy_find_tracker<S, C, E, T, F>(
+    tracker: &Tracker,
+    monster_name: S,
+    cache: &C,
+    consume: F,
+) -> Result<Vec<T>, E>
 where
     S: AsRef<str>,
     C: ScCache<Error = E>,
-    F: Fn(i64) -> T
+    F: Fn(i64) -> T,
 {
-    let index: HashMap<String, Vec<i64>> = cache.cached(
-        "fuzzy_find_tracker",
-        || async {
+    let index: HashMap<String, Vec<i64>> = cache
+        .cached("fuzzy_find_tracker", || async {
             let mut names: HashMap<String, Vec<i64>> = HashMap::with_capacity(tracker.len() * 10);
             for (monster_idx, monster) in tracker.iter() {
                 fft_insert(&mut names, *monster_idx, &monster.name);
                 fft_recurse(&mut names, *monster_idx, &monster.subgroups);
             }
             CacheBehaviour::Cache(names)
-        }
-    ).await?;
-    Ok(
-        fuzzy_find(index.iter(), monster_name)
-            .map(consume)
-            .collect()
-    )
+        })
+        .await?;
+    Ok(fuzzy_find(index.iter(), monster_name)
+        .map(consume)
+        .collect())
 }
 
 fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &String) {
-    names.entry(name.to_lowercase())
+    names
+        .entry(name.to_lowercase())
         .or_insert_with(Vec::new)
         .push(monster_idx);
 }
 
-fn fft_recurse(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, subgroups: &HashMap<i64, Group>) {
+fn fft_recurse(
+    names: &mut HashMap<String, Vec<i64>>,
+    monster_idx: i64,
+    subgroups: &HashMap<i64, Group>,
+) {
     for grp in subgroups.values() {
         fft_insert(names, monster_idx, &grp.name);
         fft_recurse(names, monster_idx, &grp.subgroups);
@@ -116,21 +123,30 @@ trait IntoFormMatchIterator {
     fn form_match_combinations(self) -> Vec<Vec<i32>>;
 }
 
-impl<T> IntoFormMatchIterator for T where T: Iterator<Item = FormMatch> {
+impl<T> IntoFormMatchIterator for T
+where
+    T: Iterator<Item = FormMatch>,
+{
     fn form_match_combinations(self) -> Vec<Vec<i32>> {
         let mut combinations: Vec<Vec<i32>> = vec![Vec::new()];
         for form_match in self {
             match form_match {
                 FormMatch::Exact(form_id) => {
-                    combinations.iter_mut().for_each(|combination| combination.push(form_id));
-                },
+                    combinations
+                        .iter_mut()
+                        .for_each(|combination| combination.push(form_id));
+                }
                 FormMatch::Fallback(form_id) => {
                     // Generate the 0-fallback combinations.
                     let mut new_combinations = combinations.to_vec();
-                    combinations.iter_mut().for_each(|combination| combination.push(form_id));
-                    new_combinations.iter_mut().for_each(|combination| combination.push(0));
+                    combinations
+                        .iter_mut()
+                        .for_each(|combination| combination.push(form_id));
+                    new_combinations
+                        .iter_mut()
+                        .for_each(|combination| combination.push(0));
                     combinations.append(&mut new_combinations);
-                },
+                }
             }
         }
         combinations
@@ -147,7 +163,7 @@ impl<'a> MonsterFormCollector<'a> {
 
     pub fn is_female<'b, P>(form: P) -> bool
     where
-        P: IntoIterator<Item = &'b i32>
+        P: IntoIterator<Item = &'b i32>,
     {
         form.into_iter()
             .nth(2)
@@ -157,7 +173,7 @@ impl<'a> MonsterFormCollector<'a> {
 
     pub fn is_shiny<'b, P>(form: P) -> bool
     where
-        P: IntoIterator<Item = &'b i32>
+        P: IntoIterator<Item = &'b i32>,
     {
         form.into_iter()
             .nth(1)
@@ -167,7 +183,7 @@ impl<'a> MonsterFormCollector<'a> {
 
     pub fn find_form<N>(&'a self, needle: N) -> Option<(Vec<i32>, Vec<String>, &'a Group)>
     where
-        N: IntoIterator<Item = FormMatch>
+        N: IntoIterator<Item = FormMatch>,
     {
         for possibility in needle.into_iter().form_match_combinations() {
             // first collapse away all trailing zeroes path elements.
@@ -175,21 +191,28 @@ impl<'a> MonsterFormCollector<'a> {
             let mut possibility_collapsed: Vec<i32> = possibility
                 .into_iter()
                 .rev()
-                .filter(|n| if !had_something_other_than_zero {
-                    if n != &0 {
-                        had_something_other_than_zero = true;
-                        true
+                .filter(|n| {
+                    if !had_something_other_than_zero {
+                        if n != &0 {
+                            had_something_other_than_zero = true;
+                            true
+                        } else {
+                            false
+                        }
                     } else {
-                        false
+                        true
                     }
-                } else {
-                    true
                 })
                 .collect();
             if possibility_collapsed.is_empty() {
                 possibility_collapsed.push(0);
             }
-            if let Some(r) = Self::find_form_step(self.0, possibility_collapsed.into_iter().rev().peekable(), Vec::new(), Vec::new()) {
+            if let Some(r) = Self::find_form_step(
+                self.0,
+                possibility_collapsed.into_iter().rev().peekable(),
+                Vec::new(),
+                Vec::new(),
+            ) {
                 return Some(r);
             }
         }
@@ -200,10 +223,10 @@ impl<'a> MonsterFormCollector<'a> {
         current_group: &'a Group,
         mut needle: Peekable<N>,
         mut collected: Vec<i32>,
-        mut collected_names: Vec<String>
+        mut collected_names: Vec<String>,
     ) -> Option<(Vec<i32>, Vec<String>, &'a Group)>
     where
-        N: Iterator<Item = i32>
+        N: Iterator<Item = i32>,
     {
         match needle.next() {
             Some(current) => {
@@ -221,40 +244,38 @@ impl<'a> MonsterFormCollector<'a> {
                                 }
                                 Self::find_form_step(sub_group, needle, collected, collected_names)
                             }
-                            None => {
-                                None
-                            }
+                            None => None,
                         }
                     }
-                    None => if current == 0 {
-                        // We have no more forms to check and are group 0 so look on (relative) root level
-                        Some((collected, collected_names, current_group))
-                    } else {
-                        let sub_group = current_group.subgroups.get(&(current as i64));
-                        match sub_group {
-                            Some(sub_group) => {
-                                // Return the sub-group.
-                                collected.push(current);
-                                if !sub_group.name.is_empty() {
-                                    collected_names.push(sub_group.name.clone());
+                    None => {
+                        if current == 0 {
+                            // We have no more forms to check and are group 0 so look on (relative) root level
+                            Some((collected, collected_names, current_group))
+                        } else {
+                            let sub_group = current_group.subgroups.get(&(current as i64));
+                            match sub_group {
+                                Some(sub_group) => {
+                                    // Return the sub-group.
+                                    collected.push(current);
+                                    if !sub_group.name.is_empty() {
+                                        collected_names.push(sub_group.name.clone());
+                                    }
+                                    Some((collected, collected_names, sub_group))
                                 }
-                                Some((collected, collected_names, sub_group))
-                            }
-                            None => {
-                                None
+                                None => None,
                             }
                         }
                     }
                 }
             }
-            None => None
+            None => None,
         }
     }
 
     pub fn map<F, T>(&'a self, map_fn: F) -> MappedFormIterator<'a, F, T>
     where
         F: Fn((Vec<i32>, Vec<String>, &'a Group)) -> T + 'a,
-        T: 'a
+        T: 'a,
     {
         MappedFormIterator {
             map_fn,
@@ -267,7 +288,7 @@ impl<'a> MonsterFormCollector<'a> {
 pub struct MappedFormIterator<'a, F, T>
 where
     F: Fn((Vec<i32>, Vec<String>, &'a Group)) -> T + 'a,
-    T: 'a
+    T: 'a,
 {
     map_fn: F,
     // The root group. If not None, the first next call will yield it and fill
@@ -280,7 +301,7 @@ where
 impl<'a, F, T> Iterator for MappedFormIterator<'a, F, T>
 where
     F: Fn((Vec<i32>, Vec<String>, &'a Group)) -> T + 'a,
-    T: 'a
+    T: 'a,
 {
     type Item = T;
 
@@ -288,20 +309,19 @@ where
         match self.root {
             Some(root) => {
                 Self::add_all_sub_groups(&[], &[], root, &mut self.remaining);
-                self.root.take().map(|r|
-                    (self.map_fn)((Vec::new(), vec![r.name.clone()], r))
-                )
+                self.root
+                    .take()
+                    .map(|r| (self.map_fn)((Vec::new(), vec![r.name.clone()], r)))
             }
-            None =>
-                self.remaining.pop_front().and_then(|(p, mut names, g)| {
-                    Self::add_all_sub_groups(&p, &names, g, &mut self.remaining);
-                    // if this is a 0 ID don't yield it.
-                    if p.last().map(|&idx| idx == 0).unwrap_or(false) {
-                        self.next()
-                    } else {
-                        Some((self.map_fn)((p, names, g)))
-                    }
-                })
+            None => self.remaining.pop_front().and_then(|(p, mut names, g)| {
+                Self::add_all_sub_groups(&p, &names, g, &mut self.remaining);
+                // if this is a 0 ID don't yield it.
+                if p.last().map(|&idx| idx == 0).unwrap_or(false) {
+                    self.next()
+                } else {
+                    Some((self.map_fn)((p, names, g)))
+                }
+            }),
         }
     }
 }
@@ -309,9 +329,14 @@ where
 impl<'a, F, T> MappedFormIterator<'a, F, T>
 where
     F: Fn((Vec<i32>, Vec<String>, &'a Group)) -> T + 'a,
-    T: 'a
+    T: 'a,
 {
-    fn add_all_sub_groups(path_to_root: &[i32], names_to_root: &[String], root: &'a Group, pending: &mut VecDeque<(Vec<i32>, Vec<String>, &'a Group)>) {
+    fn add_all_sub_groups(
+        path_to_root: &[i32],
+        names_to_root: &[String],
+        root: &'a Group,
+        pending: &mut VecDeque<(Vec<i32>, Vec<String>, &'a Group)>,
+    ) {
         for (subidx, subgroup) in &root.subgroups {
             let mut subpath = path_to_root.to_vec();
             subpath.push(*subidx as i32);

@@ -1,8 +1,8 @@
+use crate::datafiles::DatafilesReport;
+use log::*;
 use std::sync::Arc;
 #[cfg(feature = "discord")]
 use std::thread::JoinHandle;
-use log::*;
-use crate::datafiles::DatafilesReport;
 
 #[cfg(feature = "discord")]
 use crate::reporting::discord::{DiscordBot, DiscordSetupError};
@@ -69,17 +69,21 @@ pub async fn init_reporting() -> (Arc<Reporting>, ReportingJoinHandle) {
     #[cfg(feature = "discord")]
     {
         match discord::discord_main().await {
-            Ok((app, join_handle)) => {
-                (
-                    Arc::new(Reporting { discord_bot: Some(app) }),
-                    ReportingJoinHandle { discord_join_handle: Some(join_handle) }
-                )
-            }
+            Ok((app, join_handle)) => (
+                Arc::new(Reporting {
+                    discord_bot: Some(app),
+                }),
+                ReportingJoinHandle {
+                    discord_join_handle: Some(join_handle),
+                },
+            ),
             Err(DiscordSetupError::NoTokenProvided) => {
                 warn!("Discord was not set up, since no bot token was provided.");
                 (
                     Arc::new(Reporting { discord_bot: None }),
-                    ReportingJoinHandle { discord_join_handle: None }
+                    ReportingJoinHandle {
+                        discord_join_handle: None,
+                    },
                 )
             }
             Err(err) => {
@@ -90,7 +94,7 @@ pub async fn init_reporting() -> (Arc<Reporting>, ReportingJoinHandle) {
     }
     #[cfg(not(feature = "discord"))]
     {
-        (Arc::new(Reporting { }), ReportingJoinHandle { })
+        (Arc::new(Reporting {}), ReportingJoinHandle {})
     }
 }
 
@@ -102,7 +106,7 @@ pub enum ReportingEvent {
     Shutdown,
     UpdateDatafiles(DatafilesReport),
     #[doc(hidden)]
-    __Shutdown
+    __Shutdown,
 }
 
 impl<'a> ReportingEvent {
@@ -112,7 +116,7 @@ impl<'a> ReportingEvent {
             ReportingEvent::Shutdown => info!("Shutting down..."),
             ReportingEvent::UpdateDatafiles(DatafilesReport::Ok) => {
                 debug!("Data refresh finished.");
-            },
+            }
             ReportingEvent::UpdateDatafiles(DatafilesReport::Ok) => {}
             ReportingEvent::UpdateDatafiles(de) => {
                 error!("Error updating the data files: {}", de.format_short());

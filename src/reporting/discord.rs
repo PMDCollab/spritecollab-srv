@@ -1,13 +1,15 @@
 //! Optional (`discord` feature) Discord status reporting for the server.
 
+use chrono::{DateTime, Duration, Utc};
+use log::{info, warn};
 use std::mem::discriminant;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
-use chrono::{DateTime, Duration, Utc};
-use log::{info, warn};
 
-use serenity::{async_trait, Error};
+use crate::datafiles::DatafilesReport;
+use crate::reporting::ReportingEvent;
+use crate::Config;
 use serenity::client::bridge::gateway::ShardManager;
 use serenity::client::ClientBuilder;
 use serenity::http::CacheHttp;
@@ -15,11 +17,9 @@ use serenity::model::channel::{Channel, GuildChannel};
 use serenity::model::prelude::Ready;
 use serenity::prelude::*;
 use serenity::utils::Colour;
-use tokio::sync::mpsc::{Sender, Receiver, channel};
-use crate::reporting::ReportingEvent;
+use serenity::{async_trait, Error};
 use thiserror::Error;
-use crate::Config;
-use crate::datafiles::DatafilesReport;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 
 struct ReportReceiver;
 
@@ -60,28 +60,34 @@ pub enum DiscordSetupError {
     #[error("Server could not be retrieved (maybe not on the server?): {0} -> {1}")]
     GuildNotFound(u64, Error),
     #[error("The channel has an invalid type. It must be a guild text channel: {0}")]
-    InvalidChannelType(Channel)
+    InvalidChannelType(Channel),
 }
-
 
 impl ReportingEvent {
     fn metadata_discord(&self) -> Option<(Option<&'static str>, Colour, String)> {
         match self {
-            ReportingEvent::Start => Some((None, Colour::DARK_GREEN, "The server has started.".to_string())),
-            ReportingEvent::Shutdown => Some((None, Colour::DARK_GOLD, "The server has been shut down.".to_string())),
+            ReportingEvent::Start => Some((
+                None,
+                Colour::DARK_GREEN,
+                "The server has started.".to_string(),
+            )),
+            ReportingEvent::Shutdown => Some((
+                None,
+                Colour::DARK_GOLD,
+                "The server has been shut down.".to_string(),
+            )),
             ReportingEvent::UpdateDatafiles(de) => {
                 let (title, description) = de.format_for_discord();
                 let colour = match de {
                     DatafilesReport::Ok => Colour::DARK_GREEN,
-                    _ => Colour::RED
+                    _ => Colour::RED,
                 };
                 Some((Some(title), colour, description))
-            },
-            _ => None
+            }
+            _ => None,
         }
     }
 }
-
 
 struct Handler;
 
@@ -97,14 +103,22 @@ impl EventHandler for Handler {
             let channel_id = match channel_id.trim().parse::<u64>() {
                 Ok(v) => v,
                 Err(_) => {
-                    sender.send(Err(DiscordSetupError::InvalidChannelIdFormat(channel_id.to_owned()))).await.unwrap();
+                    sender
+                        .send(Err(DiscordSetupError::InvalidChannelIdFormat(
+                            channel_id.to_owned(),
+                        )))
+                        .await
+                        .unwrap();
                     return;
                 }
             };
             let channel = match ctx.http().get_channel(channel_id).await {
                 Ok(v) => v,
                 Err(e) => {
-                    sender.send(Err(DiscordSetupError::ChannelNotFound(channel_id, e))).await.unwrap();
+                    sender
+                        .send(Err(DiscordSetupError::ChannelNotFound(channel_id, e)))
+                        .await
+                        .unwrap();
                     return;
                 }
             };
@@ -114,15 +128,24 @@ impl EventHandler for Handler {
                     let guild = match ctx.http().get_guild(guild_id).await {
                         Ok(v) => v,
                         Err(e) => {
-                            sender.send(Err(DiscordSetupError::GuildNotFound(guild_id, e))).await.unwrap();
+                            sender
+                                .send(Err(DiscordSetupError::GuildNotFound(guild_id, e)))
+                                .await
+                                .unwrap();
                             return;
                         }
                     };
-                    info!("Discord reporting set up for channel '{}' on server '{}'", channel.name, guild.name);
+                    info!(
+                        "Discord reporting set up for channel '{}' on server '{}'",
+                        channel.name, guild.name
+                    );
                     channels.push(channel);
                 }
                 _ => {
-                    sender.send(Err(DiscordSetupError::InvalidChannelType(channel))).await.unwrap();
+                    sender
+                        .send(Err(DiscordSetupError::InvalidChannelType(channel)))
+                        .await
+                        .unwrap();
                     return;
                 }
             }
@@ -141,40 +164,52 @@ impl EventHandler for Handler {
                     let mut data = ctx.data.write().await;
                     let manager = data.get_mut::<ShardManagerShared>().unwrap();
                     manager.lock().await.shutdown_all().await;
-                    return
-                },
+                    return;
+                }
                 Some(ReportingEvent::__Shutdown) => {
                     let mut data = ctx.data.write().await;
                     let manager = data.get_mut::<ShardManagerShared>().unwrap();
                     manager.lock().await.shutdown_all().await;
-                    return
-                },
+                    return;
+                }
                 Some(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok)) => {
                     // only report if there was a previous failure
                     let mut data = ctx.data.write().await;
-                    let (last_evt, last_time) = data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
+                    let (last_evt, last_time) =
+                        data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
                     if last_evt.is_some() {
-                        self.report(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok), &ctx, &mut channels).await;
+                        self.report(
+                            ReportingEvent::UpdateDatafiles(DatafilesReport::Ok),
+                            &ctx,
+                            &mut channels,
+                        )
+                        .await;
                         *last_evt = None;
                     }
-                },
+                }
                 Some(ReportingEvent::UpdateDatafiles(event)) => {
                     // only report if != previous failure within the last
                     // REPORT_DATAFILES_COOLDOWN_H hours.
                     let mut data = ctx.data.write().await;
-                    let (last_evt, last_time) = data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
-                    if last_evt.is_none() || discriminant(last_evt.as_ref().unwrap()) == discriminant(&event) {
+                    let (last_evt, last_time) =
+                        data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
+                    if last_evt.is_none()
+                        || discriminant(last_evt.as_ref().unwrap()) == discriminant(&event)
+                    {
                         let now = Utc::now();
                         if &(now - Duration::hours(REPORT_DATAFILES_COOLDOWN_H)) >= &last_time {
-                            self.report(ReportingEvent::UpdateDatafiles(event.clone()), &ctx, &mut channels).await
+                            self.report(
+                                ReportingEvent::UpdateDatafiles(event.clone()),
+                                &ctx,
+                                &mut channels,
+                            )
+                            .await
                         }
                         *last_time = now;
                         *last_evt = Some(event);
                     }
-                },
-                Some(event) => {
-                    self.report(event, &ctx, &mut channels).await
                 }
+                Some(event) => self.report(event, &ctx, &mut channels).await,
             }
         }
     }
@@ -184,9 +219,8 @@ impl Handler {
     async fn report(&self, event: ReportingEvent, ctx: &Context, channels: &mut Vec<GuildChannel>) {
         if let Some((title, color, description)) = event.metadata_discord() {
             for channel in channels {
-                let send = channel.send_message(
-                    ctx.http(),
-                    |msg| {
+                let send = channel
+                    .send_message(ctx.http(), |msg| {
                         msg.add_embed(|embed| {
                             if let Some(title) = title {
                                 embed.title(title);
@@ -200,10 +234,13 @@ impl Handler {
                             embed
                         });
                         msg
-                    },
-                ).await;
+                    })
+                    .await;
                 if let Err(send_err) = send {
-                    warn!("Discord reporting in channel '{}' failed: {:?}", channel.name, send_err);
+                    warn!(
+                        "Discord reporting in channel '{}' failed: {:?}",
+                        channel.name, send_err
+                    );
                 }
             }
         }
@@ -217,15 +254,23 @@ pub struct DiscordBot {
 
 impl DiscordBot {
     pub(crate) async fn send_event(&self, event: ReportingEvent) {
-        self.sender.send(event).await.expect("Failed to send event to Discord");
+        self.sender
+            .send(event)
+            .await
+            .expect("Failed to send event to Discord");
     }
     pub(crate) async fn shutdown(&self) {
-        self.sender.send(ReportingEvent::__Shutdown).await.expect("Failed to send event to Discord");
+        self.sender
+            .send(ReportingEvent::__Shutdown)
+            .await
+            .expect("Failed to send event to Discord");
     }
 }
 
 impl DiscordBot {
-    pub async fn new(client_builder: ClientBuilder) -> Result<(Self, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
+    pub async fn new(
+        client_builder: ClientBuilder,
+    ) -> Result<(Self, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
         let (reporting_sender, reporting_receiver) = channel(20);
         let (ready_sender, mut ready_receiver) = channel(1);
         let mut client = client_builder.event_handler(Handler).await?;
@@ -243,9 +288,7 @@ impl DiscordBot {
                 .enable_all()
                 .build()
                 .unwrap();
-            let r = rt.block_on(async {
-                client.start().await
-            });
+            let r = rt.block_on(async { client.start().await });
             info!("Stopped Discord Reporter.");
             r
         });
@@ -253,17 +296,19 @@ impl DiscordBot {
         // Wait for ready status and propagate errors.
         ready_receiver.recv().await.unwrap()?;
 
-        Ok((DiscordBot { sender: reporting_sender }, handle))
+        Ok((
+            DiscordBot {
+                sender: reporting_sender,
+            },
+            handle,
+        ))
     }
 }
 
-pub(crate) async fn discord_main() -> Result<(DiscordBot, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
+pub(crate) async fn discord_main(
+) -> Result<(DiscordBot, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
     match Config::DiscordToken.get_or_none() {
         None => Err(DiscordSetupError::NoTokenProvided),
-        Some(token) => Ok(
-            DiscordBot::new(
-                Client::builder(token, GatewayIntents::empty())
-            ).await?
-        )
+        Some(token) => Ok(DiscordBot::new(Client::builder(token, GatewayIntents::empty())).await?),
     }
 }

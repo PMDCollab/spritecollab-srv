@@ -1,14 +1,14 @@
+use crate::datafiles::{DataReadError, DataReadResult};
+use crate::search::fuzzy_find;
+use csv::ReaderBuilder;
+use once_cell::sync::OnceCell;
+use regex::Regex;
+use serde::{Deserialize, Deserializer};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use csv::ReaderBuilder;
-use once_cell::sync::OnceCell;
-use regex::Regex;
-use serde::{Deserialize, Deserializer};
-use crate::datafiles::{DataReadError, DataReadResult};
-use crate::search::fuzzy_find;
 
 static DISCORD_REGEX: OnceCell<Regex> = OnceCell::new();
 
@@ -41,7 +41,11 @@ pub async fn read_credit_names<P: AsRef<Path>>(path: P) -> DataReadResult<Credit
         keys_credit_ids.insert(record.credit_id.clone(), idx);
         data.push(record);
     }
-    Ok(CreditNames { data, keys_credit_ids, keys_names })
+    Ok(CreditNames {
+        data,
+        keys_credit_ids,
+        keys_names,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -64,17 +68,23 @@ impl CreditNames {
                 .iter()
                 .map(|(key, val)| (key, Cow::from(vec![*val])))
                 .chain(self.keys_names.iter().map(|(kn, kv)| (kn, Cow::from(kv)))),
-            query
-        ).map(|val| &self.data[val])
+            query,
+        )
+        .map(|val| &self.data[val])
     }
     pub fn get(&self, credit_id: &str) -> Option<&CreditNamesRow> {
-        self.keys_credit_ids.get(credit_id).map(|idx| &self.data[*idx])
+        self.keys_credit_ids
+            .get(credit_id)
+            .map(|idx| &self.data[*idx])
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct CreditNamesRow {
-    #[serde(deserialize_with = "cleanup_discord_id", rename(deserialize = "Discord"))]
+    #[serde(
+        deserialize_with = "cleanup_discord_id",
+        rename(deserialize = "Discord")
+    )]
     pub credit_id: String,
     #[serde(rename(deserialize = "Name"))]
     pub name: Option<String>,
@@ -82,7 +92,10 @@ pub struct CreditNamesRow {
     pub contact: Option<String>,
 }
 
-fn cleanup_discord_id<'de, D>(deser: D) -> Result<String, D::Error> where D: Deserializer<'de> {
+fn cleanup_discord_id<'de, D>(deser: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
     Ok(parse_credit_id(&String::deserialize(deser)?))
 }
 

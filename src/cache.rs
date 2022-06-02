@@ -1,11 +1,11 @@
-use std::convert::Infallible;
-use std::future::Future;
-use std::hint::unreachable_unchecked;
+use crate::sprite_collab::CacheBehaviour;
 use async_trait::async_trait;
 use fred::types::RedisKey;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use crate::sprite_collab::CacheBehaviour;
+use std::convert::Infallible;
+use std::future::Future;
+use std::hint::unreachable_unchecked;
 
 #[async_trait]
 /// Trait for caching data in Redis, and calculating it if it's not in the cache yet.
@@ -14,15 +14,19 @@ pub trait ScCache: Send + Sync {
 
     /// Do a cache lookup, on miss, calculate the value.
     async fn cached<S, Fn, Ft, T>(&self, cache_key: S, func: Fn) -> Result<T, Self::Error>
-        where
-            S: AsRef<str> + Into<RedisKey> + Send + Sync,
-            Fn: (FnOnce() -> Ft) + Send,
-            Ft: Future<Output = CacheBehaviour<T>> + Send,
-            T: DeserializeOwned + Serialize + Send + Sync {
-        match self.cached_may_fail(cache_key, || async {
-            let r: Result<CacheBehaviour<T>, Infallible> = Ok(func().await);
-            r
-        }).await {
+    where
+        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        Fn: (FnOnce() -> Ft) + Send,
+        Ft: Future<Output = CacheBehaviour<T>> + Send,
+        T: DeserializeOwned + Serialize + Send + Sync,
+    {
+        match self
+            .cached_may_fail(cache_key, || async {
+                let r: Result<CacheBehaviour<T>, Infallible> = Ok(func().await);
+                r
+            })
+            .await
+        {
             Ok(Ok(v)) => Ok(v),
             // SAFETY: Since the closure above will never return an Err, we can mark this as
             // definitely unreachable.
@@ -33,12 +37,17 @@ pub trait ScCache: Send + Sync {
 
     /// Do a cache lookup, on miss, calculate the value. Calculating the value may fail,
     /// in that case chain the error (= it has the same type as Self::Error).
-    async fn cached_may_fail_chain<S, Fn, Ft, T>(&self, cache_key: S, func: Fn) -> Result<T, Self::Error>
-        where
-            S: AsRef<str> + Into<RedisKey> + Send + Sync,
-            Fn: (FnOnce() -> Ft) + Send,
-            Ft: Future<Output = Result<CacheBehaviour<T>, Self::Error>> + Send,
-            T: DeserializeOwned + Serialize + Send + Sync {
+    async fn cached_may_fail_chain<S, Fn, Ft, T>(
+        &self,
+        cache_key: S,
+        func: Fn,
+    ) -> Result<T, Self::Error>
+    where
+        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        Fn: (FnOnce() -> Ft) + Send,
+        Ft: Future<Output = Result<CacheBehaviour<T>, Self::Error>> + Send,
+        T: DeserializeOwned + Serialize + Send + Sync,
+    {
         match self.cached_may_fail(cache_key, func).await {
             Ok(Ok(v)) => Ok(v),
             Ok(Err(e)) => Err(e),
@@ -47,11 +56,15 @@ pub trait ScCache: Send + Sync {
     }
 
     /// Do a cache lookup, on miss, calculate the value. Calculating the value may fail.
-    async fn cached_may_fail<S, Fn, Ft, T, E>(&self, cache_key: S, func: Fn) -> Result<Result<T, E>, Self::Error>
-        where
-            S: AsRef<str> + Into<RedisKey> + Send + Sync,
-            Fn: (FnOnce() -> Ft) + Send,
-            Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
-            T: DeserializeOwned + Serialize + Send + Sync,
-            E: Send;
+    async fn cached_may_fail<S, Fn, Ft, T, E>(
+        &self,
+        cache_key: S,
+        func: Fn,
+    ) -> Result<Result<T, E>, Self::Error>
+    where
+        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        Fn: (FnOnce() -> Ft) + Send,
+        Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
+        T: DeserializeOwned + Serialize + Send + Sync,
+        E: Send;
 }

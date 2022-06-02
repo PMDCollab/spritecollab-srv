@@ -1,38 +1,41 @@
 //! SpriteCollab Rust GraphQL Server.
 //!
 //! Access `/ for GraphiQL.
-#[forbid(unused_must_use)]
-
-mod schema;
-mod sprite_collab;
+mod assets;
+mod cache;
 mod config;
 mod datafiles;
 mod reporting;
 mod scheduler;
-mod cache;
+#[forbid(unused_must_use)]
+mod schema;
 mod search;
-mod assets;
+mod sprite_collab;
 
-use std::{convert::Infallible, sync::Arc, thread};
 use std::mem::take;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
-use std::panic::{PanicInfo, set_hook};
+use std::panic::{set_hook, PanicInfo};
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
+use std::{convert::Infallible, sync::Arc, thread};
 
-use backtrace::Backtrace;
-use hyper::{server::Server, service::{make_service_fn, service_fn}, Body, Method, Response, StatusCode};
-use juniper::{EmptyMutation, EmptySubscription, RootNode};
-use log::{error, info};
-use once_cell::sync::OnceCell;
-use tokio::runtime::Handle;
-use tokio::task;
 use crate::config::Config;
 use crate::reporting::{init_reporting, Reporting, ReportingEvent, ReportingJoinHandle};
 use crate::scheduler::DataRefreshScheduler;
 use crate::schema::{Context, Query};
 use crate::sprite_collab::SpriteCollab;
+use backtrace::Backtrace;
+use hyper::{
+    server::Server,
+    service::{make_service_fn, service_fn},
+    Body, Method, Response, StatusCode,
+};
+use juniper::{EmptyMutation, EmptySubscription, RootNode};
+use log::{error, info};
+use once_cell::sync::OnceCell;
+use tokio::runtime::Handle;
+use tokio::task;
 
 const PORT: u16 = 3000;
 
@@ -46,20 +49,14 @@ async fn main() {
     reporting.send_event(ReportingEvent::Start).await;
     GlobalShutdown::register_panic_hook(reporting.clone(), reporting_join_handle);
 
-    let sprite_collab = SpriteCollab::new(
-        Config::redis_config(),
-        reporting.clone(),
-    ).await;
+    let sprite_collab = SpriteCollab::new(Config::redis_config(), reporting.clone()).await;
 
     let scheduler = Arc::new(Mutex::new(DataRefreshScheduler::new(sprite_collab.clone())));
     GlobalShutdown::add_scheduler(scheduler.clone());
 
     let addr: SocketAddr = ([0, 0, 0, 0], PORT).into();
 
-    let ctx = Arc::new(Context::new(
-        sprite_collab,
-        reporting.clone()
-    ));
+    let ctx = Arc::new(Context::new(sprite_collab, reporting.clone()));
     let root_node = Arc::new(RootNode::new(
         Query,
         EmptyMutation::<Context>::new(),
@@ -81,7 +78,9 @@ async fn main() {
                             juniper_hyper::graphql(root_node, ctx, req).await
                         }
                         _ => {
-                            let mut response = Response::new(Body::from("<html><body><img src=\"https://http.cat/404\"></body></html>"));
+                            let mut response = Response::new(Body::from(
+                                "<html><body><img src=\"https://http.cat/404\"></body></html>",
+                            ));
                             *response.status_mut() = StatusCode::NOT_FOUND;
                             response
                         }
@@ -109,7 +108,10 @@ async fn shutdown_signal() {
 }
 
 #[derive(Default)]
-struct GlobalShutdown(Option<(Arc<Reporting>, ReportingJoinHandle)>, Option<Arc<Mutex<DataRefreshScheduler>>>);
+struct GlobalShutdown(
+    Option<(Arc<Reporting>, ReportingJoinHandle)>,
+    Option<Arc<Mutex<DataRefreshScheduler>>>,
+);
 
 static mut GLOBAL_SHUTDOWN: OnceCell<Mutex<GlobalShutdown>> = OnceCell::new();
 
@@ -155,6 +157,8 @@ impl GlobalShutdown {
     }
 
     fn slf<'a>() -> MutexGuard<'a, GlobalShutdown> {
-        unsafe { GLOBAL_SHUTDOWN.get_or_init(|| Mutex::new(GlobalShutdown(None, None))) }.lock().unwrap()
+        unsafe { GLOBAL_SHUTDOWN.get_or_init(|| Mutex::new(GlobalShutdown(None, None))) }
+            .lock()
+            .unwrap()
     }
 }

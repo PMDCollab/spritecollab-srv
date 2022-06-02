@@ -1,5 +1,5 @@
-use std::env::var;
 use dotenv::dotenv;
+use std::env::var;
 
 pub enum Config {
     Address,
@@ -32,13 +32,19 @@ impl Config {
         match self {
             Config::Address => var("SCSRV_ADDRESS").expect("SCSRV_ADDRESS not set"),
             Config::GitRepo => var("SCSRV_GIT_REPO").expect("SCSRV_GIT_REPO not set"),
-            Config::GitAssetsUrl => var("SCSRV_GIT_ASSETS_URL").expect("SCSRV_GIT_ASSETS_URL not set"),
+            Config::GitAssetsUrl => {
+                var("SCSRV_GIT_ASSETS_URL").expect("SCSRV_GIT_ASSETS_URL not set")
+            }
             Config::ServerUrl => var("SCSRV_SERVER_URL").expect("SCSRV_SERVER_URL not set"),
             Config::Workdir => var("SCSRV_WORKDIR").expect("SCSRV_WORKDIR is not set"),
             Config::RedisHost => var("SCSRV_REDIS_HOST").expect("SCSRV_REDIS_HOST is not set"),
             Config::RedisPort => var("SCSRV_REDIS_PORT").expect("SCSRV_REDIS_PORT is not set"),
-            Config::DiscordToken => var("SCSRV_DISCORD_TOKEN").expect("SCSRV_DISCORD_TOKEN is not set"),
-            Config::DiscordChannels => var("SCSRV_DISCORD_CHANNELS").expect("SCSRV_DISCORD_CHANNELS is not set"),
+            Config::DiscordToken => {
+                var("SCSRV_DISCORD_TOKEN").expect("SCSRV_DISCORD_TOKEN is not set")
+            }
+            Config::DiscordChannels => {
+                var("SCSRV_DISCORD_CHANNELS").expect("SCSRV_DISCORD_CHANNELS is not set")
+            }
         }
     }
 
@@ -57,6 +63,12 @@ impl Config {
     }
 
     pub fn redis_config() -> (String, u16) {
-        (Self::RedisHost.get(), Self::RedisPort.get().parse::<u16>().expect("Invalid Redis port"))
+        (
+            Self::RedisHost.get(),
+            Self::RedisPort
+                .get()
+                .parse::<u16>()
+                .expect("Invalid Redis port"),
+        )
     }
 }
