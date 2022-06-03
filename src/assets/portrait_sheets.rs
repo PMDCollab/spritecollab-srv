@@ -1,10 +1,10 @@
-use std::cmp::max;
-use std::collections::HashMap;
-use std::path::Path;
-use image::{GenericImage, RgbaImage};
 use crate::assets::img_util::{add_palette_to, to_png};
 use crate::datafiles::tracker::Group;
 use crate::sprite_collab::CacheBehaviour;
+use image::{GenericImage, RgbaImage};
+use std::cmp::max;
+use std::collections::HashMap;
+use std::path::Path;
 
 /// Maps known emotions from the sprite config to positions in the sheets.
 /// All positions, widths and heights here use the portraits as units, so they must
@@ -37,29 +37,38 @@ impl PortraitSheetEmotions {
 }
 
 pub async fn make_portrait_sheet(
-    group: &Group, emotions: PortraitSheetEmotions, portrait_base_path: &Path, portrait_size: i32
+    group: &Group,
+    emotions: PortraitSheetEmotions,
+    portrait_base_path: &Path,
+    portrait_size: i32,
 ) -> Result<CacheBehaviour<Vec<u8>>, anyhow::Error> {
-    Ok(CacheBehaviour::Cache(to_png(do_make_portrait_sheet(
-        0, group, emotions, portrait_base_path, portrait_size
-    ).await?)?))
+    Ok(CacheBehaviour::Cache(to_png(
+        do_make_portrait_sheet(0, group, emotions, portrait_base_path, portrait_size).await?,
+    )?))
 }
 
 pub async fn make_portrait_recolor_sheet(
-    group: &Group, emotions: PortraitSheetEmotions, portrait_base_path: &Path, portrait_size: i32
+    group: &Group,
+    emotions: PortraitSheetEmotions,
+    portrait_base_path: &Path,
+    portrait_size: i32,
 ) -> Result<CacheBehaviour<Vec<u8>>, anyhow::Error> {
-    let mut img = do_make_portrait_sheet(
-        1, group, emotions, portrait_base_path, portrait_size
-    ).await?;
+    let mut img =
+        do_make_portrait_sheet(1, group, emotions, portrait_base_path, portrait_size).await?;
     add_palette_to(&mut img);
     Ok(CacheBehaviour::Cache(to_png(img)?))
 }
 
 async fn do_make_portrait_sheet(
-    padding_top: i32, group: &Group, emotions: PortraitSheetEmotions, portrait_base_path: &Path, portrait_size: i32
+    padding_top: i32,
+    group: &Group,
+    emotions: PortraitSheetEmotions,
+    portrait_base_path: &Path,
+    portrait_size: i32,
 ) -> Result<RgbaImage, anyhow::Error> {
     let mut img = RgbaImage::new(
         (emotions.max_width * portrait_size) as u32,
-        (emotions.max_height * portrait_size + padding_top) as u32
+        (emotions.max_height * portrait_size + padding_top) as u32,
     );
     for grp_emotion in group.portrait_files.keys() {
         if emotions.emotion_positions.contains_key(grp_emotion) {
@@ -69,7 +78,7 @@ async fn do_make_portrait_sheet(
             img.copy_from(
                 &portrait_img,
                 (x * portrait_size) as u32,
-                ((y  * portrait_size) + padding_top) as u32
+                ((y * portrait_size) + padding_top) as u32,
             )?;
         }
     }

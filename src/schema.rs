@@ -350,8 +350,10 @@ impl<'a> MonsterFormSprites<'a> {
         if !form_joined.is_empty() {
             form_joined = format!("/{}", form_joined);
         }
-        let path = PathBuf::from(SystemConfig::Workdir.get())
-            .join(&format!("spritecollab/sprite/{:04}{}/AnimData.xml", monster_idx, form_joined));
+        let path = PathBuf::from(SystemConfig::Workdir.get()).join(&format!(
+            "spritecollab/sprite/{:04}{}/AnimData.xml",
+            monster_idx, form_joined
+        ));
         let xml = AnimDataXml::open(path).map_err(Self::failed_xml_fetch)?;
         Ok(CacheBehaviour::Cache(xml.get_action_copies()))
     }
@@ -361,7 +363,7 @@ impl<'a> MonsterFormSprites<'a> {
         FieldError::new(
             "Internal Server Error: Failed processing the animation data from the AnimData.xml."
                 .to_string(),
-            graphql_value!({"details": e_as_str}),
+            graphql_value!({ "details": e_as_str }),
         )
     }
 

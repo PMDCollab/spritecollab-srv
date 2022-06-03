@@ -20,6 +20,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use std::{convert::Infallible, sync::Arc, thread};
 
+use crate::assets::match_and_process_assets_path;
 use crate::config::Config;
 use crate::reporting::{init_reporting, Reporting, ReportingEvent, ReportingJoinHandle};
 use crate::scheduler::DataRefreshScheduler;
@@ -36,7 +37,6 @@ use log::{error, info};
 use once_cell::sync::OnceCell;
 use tokio::runtime::Handle;
 use tokio::task;
-use crate::assets::match_and_process_assets_path;
 
 const PORT: u16 = 3000;
 
@@ -82,7 +82,13 @@ async fn main() {
                             juniper_hyper::graphql(root_node, ctx, req).await
                         }
                         (method, path) => {
-                            match match_and_process_assets_path(method, path, sprite_collab_cln.clone()).await {
+                            match match_and_process_assets_path(
+                                method,
+                                path,
+                                sprite_collab_cln.clone(),
+                            )
+                            .await
+                            {
                                 Some(r) => r,
                                 None => {
                                     let mut response = Response::new(Body::from(
