@@ -788,7 +788,7 @@ pub struct Context {
 impl Context {
     pub fn new(collab: Arc<SpriteCollab>, reporting: Arc<Reporting>) -> Self {
         Context {
-            this_server_url: SystemConfig::ServerUrl.get_or_none().unwrap_or_default(),
+            this_server_url: SystemConfig::Address.get_or_none().unwrap_or_default(),
             collab,
             reporting,
         }

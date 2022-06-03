@@ -6,7 +6,6 @@ pub enum Config {
     Address,
     GitRepo,
     GitAssetsUrl,
-    ServerUrl,
     Workdir,
     RedisHost,
     RedisPort,
@@ -36,7 +35,6 @@ impl Config {
             Config::GitAssetsUrl => {
                 var("SCSRV_GIT_ASSETS_URL").expect("SCSRV_GIT_ASSETS_URL not set")
             }
-            Config::ServerUrl => var("SCSRV_SERVER_URL").expect("SCSRV_SERVER_URL not set"),
             Config::Workdir => var("SCSRV_WORKDIR").expect("SCSRV_WORKDIR is not set"),
             Config::RedisHost => var("SCSRV_REDIS_HOST").expect("SCSRV_REDIS_HOST is not set"),
             Config::RedisPort => var("SCSRV_REDIS_PORT").expect("SCSRV_REDIS_PORT is not set"),
@@ -54,7 +52,6 @@ impl Config {
             Config::Address => var("SCSRV_ADDRESS").ok(),
             Config::GitRepo => var("SCSRV_GIT_REPO").ok(),
             Config::GitAssetsUrl => var("SCSRV_GIT_ASSETS_URL").ok(),
-            Config::ServerUrl => var("SCSRV_SERVER_URL").ok(),
             Config::Workdir => var("SCSRV_WORKDIR").ok(),
             Config::RedisHost => var("SCSRV_REDIS_HOST").ok(),
             Config::RedisPort => var("SCSRV_REDIS_PORT").ok(),
