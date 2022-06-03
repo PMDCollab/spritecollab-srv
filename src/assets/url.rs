@@ -1,6 +1,8 @@
 use crate::Config;
 use itertools::Itertools;
+use route_recognizer::Router;
 
+#[derive(Clone, Debug)]
 pub enum AssetType<'a> {
     PortraitSheet,
     PortraitRecolorSheet,
@@ -103,6 +105,26 @@ pub fn get_url(
             )
         }
     }
+}
+
+/// Matches a URL, if it matches returns a tuple of (monster id, form path, asset type)
+pub fn match_url(path: &str) -> Option<(i32, Vec<i32>, AssetType)> {
+    let mut router = Router::new();
+
+    router.add("/assets/:monsterid/*formpath/portrait_sheet.png", AssetType::PortraitSheet);
+    router.add("/assets/:monsterid/*formpath/portrait_recolor_sheet.png", AssetType::PortraitRecolorSheet);
+    router.add("/assets/:monsterid/*formpath/sprites.zip", AssetType::SpriteZip);
+    router.add("/assets/:monsterid/*formpath/sprite_recolor_sheet.png", AssetType::SpriteRecolorSheet);
+
+    let m = router.recognize(path).ok()?;
+
+    let monster_id = m.params().find("monsterid").and_then(|x| x.parse::<i32>().ok())?;
+    let form_path = m.params().find("formpath").and_then(|s| s
+        .split('/')
+        .map(|x| x.parse::<i32>().ok())
+        .collect::<Option<Vec<i32>>>()
+    )?;
+    Some((monster_id, form_path, (*m.handler()).clone()))
 }
 
 fn up(s: &str) -> String {

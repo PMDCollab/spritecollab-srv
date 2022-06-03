@@ -36,6 +36,7 @@ use log::{error, info};
 use once_cell::sync::OnceCell;
 use tokio::runtime::Handle;
 use tokio::task;
+use crate::assets::match_and_process_assets_path;
 
 const PORT: u16 = 3000;
 
@@ -56,33 +57,41 @@ async fn main() {
 
     let addr: SocketAddr = ([0, 0, 0, 0], PORT).into();
 
-    let ctx = Arc::new(Context::new(sprite_collab, reporting.clone()));
+    let ctx = Arc::new(Context::new(sprite_collab.clone(), reporting.clone()));
     let root_node = Arc::new(RootNode::new(
         Query,
         EmptyMutation::<Context>::new(),
         EmptySubscription::<Context>::new(),
     ));
+    let sprite_collab_cln = sprite_collab.clone();
 
     let new_service = make_service_fn(move |_| {
         let root_node = root_node.clone();
         let ctx = ctx.clone();
+        let sprite_collab_cln = sprite_collab_cln.clone();
 
         async {
             Ok::<_, hyper::Error>(service_fn(move |req| {
                 let root_node = root_node.clone();
                 let ctx = ctx.clone();
-                async {
+                let sprite_collab_cln = sprite_collab_cln.clone();
+                async move {
                     Ok::<_, Infallible>(match (req.method(), req.uri().path()) {
                         (&Method::GET, "/") => juniper_hyper::graphiql("/graphql", None).await,
                         (&Method::GET, "/graphql") | (&Method::POST, "/graphql") => {
                             juniper_hyper::graphql(root_node, ctx, req).await
                         }
-                        _ => {
-                            let mut response = Response::new(Body::from(
-                                "<html><body><img src=\"https://http.cat/404\"></body></html>",
-                            ));
-                            *response.status_mut() = StatusCode::NOT_FOUND;
-                            response
+                        (method, path) => {
+                            match match_and_process_assets_path(method, path, sprite_collab_cln.clone()).await {
+                                Some(r) => r,
+                                None => {
+                                    let mut response = Response::new(Body::from(
+                                        "<html><body><img src=\"https://http.cat/404\"></body></html>",
+                                    ));
+                                    *response.status_mut() = StatusCode::NOT_FOUND;
+                                    response
+                                }
+                            }
                         }
                     })
                 }

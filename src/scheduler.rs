@@ -7,7 +7,7 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-const REFRESH_INTERVAL: u64 = 15 * 60;
+const REFRESH_INTERVAL: u64 = 45 * 60;
 pub struct DataRefreshScheduler(Option<JoinHandle<()>>, Sender<()>);
 
 impl DataRefreshScheduler {

@@ -16,9 +16,9 @@ dotenv = "0.15"
 git2 = "0.13"
 juniper = "0.15"
 hyper = { version = "0.14", features = ["full"] }
-hyper-tls = "0.5"
 juniper_hyper = "0.8"
 tokio = { version = "1.18", features = ["full"] }
+route-recognizer = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde-xml-rs = "0.5"
@@ -35,6 +35,9 @@ fuzzy-matcher = "0.3"
 itertools = "0.10"
 async-trait = "0.1"
 num-traits = "0.2"
+zip = { version = "0.6", features = ["deflate"] }
+image = "0.24"
+indexmap = "1.8"
 serenity = { version = "0.11", optional = true, default-features = false, features = [
     "builder",
     "cache",

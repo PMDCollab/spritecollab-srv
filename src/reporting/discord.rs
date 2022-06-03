@@ -150,7 +150,7 @@ impl EventHandler for Handler {
                 }
             }
         }
-        sender.send(Ok(())).await.unwrap();
+        sender.send(Ok(())).await.ok();
         drop(data);
 
         // Main reporting loop.

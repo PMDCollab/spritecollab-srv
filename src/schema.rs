@@ -10,9 +10,6 @@ use crate::sprite_collab::{CacheBehaviour, SpriteCollab};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use fred::types::RedisKey;
-use hyper::body::to_bytes;
-use hyper::{Client, Uri};
-use hyper_tls::HttpsConnector;
 use itertools::Itertools;
 use juniper::{
     graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
@@ -23,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task;
@@ -345,49 +343,37 @@ impl<'a> MonsterFormSprites<'a> {
     }
 
     async fn fetch_xml_and_make_action_map(
-        anim_xml_url: &str,
+        monster_idx: i32,
+        path_to_form: &[i32],
     ) -> FieldResult<CacheBehaviour<HashMap<String, String>>> {
-        let uri = anim_xml_url
-            .parse::<Uri>()
-            .map_err(|e| Self::failed_xml_fetch(e, anim_xml_url))?;
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, hyper::Body>(https);
-        let resp = client
-            .get(uri)
-            .await
-            .map_err(|e| Self::failed_xml_fetch(e, anim_xml_url))?;
-        let bytes = to_bytes(resp.into_body())
-            .await
-            .map_err(|e| Self::failed_xml_fetch(e, anim_xml_url))?;
-        let xml = AnimDataXml::from_reader(bytes.as_ref())
-            .map_err(|e| Self::failed_xml_fetch(e, anim_xml_url))?;
+        let mut form_joined = path_to_form.iter().map(|v| format!("{:04}", v)).join("/");
+        if !form_joined.is_empty() {
+            form_joined = format!("/{}", form_joined);
+        }
+        let path = PathBuf::from(SystemConfig::Workdir.get())
+            .join(&format!("spritecollab/sprite/{:04}{}/AnimData.xml", monster_idx, form_joined));
+        let xml = AnimDataXml::open(path).map_err(Self::failed_xml_fetch)?;
         Ok(CacheBehaviour::Cache(xml.get_action_copies()))
     }
 
-    fn failed_xml_fetch<E: Debug>(e: E, anim_xml_url: &str) -> FieldError {
+    fn failed_xml_fetch<E: Debug>(e: E) -> FieldError {
         let e_as_str = format!("{:?}", e);
         FieldError::new(
             "Internal Server Error: Failed processing the animation data from the AnimData.xml."
                 .to_string(),
-            graphql_value!({"details": e_as_str, "xml_url": anim_xml_url}),
+            graphql_value!({"details": e_as_str}),
         )
     }
 
     /// XXX: This isn't ideal, but Juniper is a bit silly about it's Sync requirements, so there's
     /// currently no way to do this truly async as far as I can tell.
     fn get_action_map_blocking(&self, context: &Context) -> FieldResult<HashMap<String, String>> {
-        let xml_url = get_url(
-            AssetType::SpriteAnimDataXml,
-            &context.this_server_url,
-            self.1,
-            self.2,
-        );
         task::block_in_place(move || {
             Handle::current().block_on(async move {
                 context
                     .cached_may_fail_chain(
                         format!("/monster_actions|{}/{:?}", self.1, self.2),
-                        || Self::fetch_xml_and_make_action_map(&xml_url),
+                        || Self::fetch_xml_and_make_action_map(self.1, self.2),
                     )
                     .await
             })
