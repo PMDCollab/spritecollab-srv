@@ -1,13 +1,14 @@
 //! SpriteCollab Rust GraphQL Server.
 //!
 //! Access `/ for GraphiQL.
+#![forbid(unused_must_use)]
+
 mod assets;
 mod cache;
 mod config;
 mod datafiles;
 mod reporting;
 mod scheduler;
-#[forbid(unused_must_use)]
 mod schema;
 mod search;
 mod sprite_collab;
