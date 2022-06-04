@@ -156,6 +156,7 @@ fn make_http_options_response() -> Response<Body> {
             "Content-Type, Authorization, Accept",
         )
         .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Max-Age", "86400")
         .body(Body::from(""))
         .unwrap()
 }
