@@ -97,7 +97,7 @@ pub fn get_url(
         }
         AssetType::SpriteShadows(action) => {
             format!(
-                "{}/sprite/{:04}{}/{}-Shadows.png",
+                "{}/sprite/{:04}{}/{}-Shadow.png",
                 assets_srv_url,
                 monster_id,
                 form_joined,
