@@ -80,6 +80,7 @@ async fn main() {
                 let sprite_collab_cln = sprite_collab_cln.clone();
                 async move {
                     Ok::<_, Infallible>(match (req.method(), req.uri().path()) {
+                        (&Method::OPTIONS, _) => make_http_options_response(),
                         (&Method::GET, "/") => juniper_hyper::graphiql("/graphql", None).await,
                         (&Method::GET, "/graphql") | (&Method::POST, "/graphql") => {
                             let mut response = juniper_hyper::graphql(root_node, ctx, req).await;
@@ -105,6 +106,7 @@ async fn main() {
                                     *response.body_mut() = Body::from(
                                         "Internal server error while trying to display error.",
                                     );
+                                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                                 }
                             }
                             response
@@ -142,6 +144,20 @@ async fn main() {
     }
 
     GlobalShutdown::shutdown().await;
+}
+
+/// Make a HTTP OPTIONS response.
+fn make_http_options_response() -> Response<Body> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        .header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Authorization, Accept",
+        )
+        .header("Access-Control-Allow-Origin", "*")
+        .body(Body::from(""))
+        .unwrap()
 }
 
 async fn shutdown_signal() {
