@@ -172,6 +172,7 @@ pub fn make_err_response<E: Debug>(err: E, request_path: &str) -> Response<Body>
     warn!("Error processing asset at '{}': {:?}", request_path, err);
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
+        .header("Content-Type", "text/html; charset=utf-8")
         .body(Body::from(
             format!(
                 "<html><body><h1>Internal Server Error</h1><pre>{:?}</pre><br><img src=\"https://http.cat/500\"></body></html>",

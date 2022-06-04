@@ -126,6 +126,10 @@ async fn main() {
                                         "<html><body><img src=\"https://http.cat/404\"></body></html>",
                                     ));
                                     *response.status_mut() = StatusCode::NOT_FOUND;
+                                    response.headers_mut().insert(
+                                        "content-type",
+                                        HeaderValue::from_str("text/html; charset=UTF-8").unwrap(),
+                                    );
                                     response
                                 }
                             }

@@ -127,6 +127,19 @@ pub fn match_url(path: &str) -> Option<(i32, Vec<i32>, AssetType)> {
         "/assets/:monsterid/*formpath/sprite_recolor_sheet.png",
         AssetType::SpriteRecolorSheet,
     );
+    router.add(
+        "/assets/:monsterid/portrait_sheet.png",
+        AssetType::PortraitSheet,
+    );
+    router.add(
+        "/assets/:monsterid/portrait_recolor_sheet.png",
+        AssetType::PortraitRecolorSheet,
+    );
+    router.add("/assets/:monsterid/sprites.zip", AssetType::SpriteZip);
+    router.add(
+        "/assets/:monsterid/sprite_recolor_sheet.png",
+        AssetType::SpriteRecolorSheet,
+    );
 
     let m = router.recognize(path).ok()?;
 
@@ -134,11 +147,16 @@ pub fn match_url(path: &str) -> Option<(i32, Vec<i32>, AssetType)> {
         .params()
         .find("monsterid")
         .and_then(|x| x.parse::<i32>().ok())?;
-    let form_path = m.params().find("formpath").and_then(|s| {
+    let form_path = m.params().find("formpath").map(|s| {
         s.split('/')
-            .map(|x| x.parse::<i32>().ok())
-            .collect::<Option<Vec<i32>>>()
-    })?;
+            .map(|x| x.parse::<i32>())
+            .collect::<Result<Vec<i32>, _>>()
+    });
+    let form_path = match form_path {
+        Some(Ok(x)) => x,
+        Some(Err(_)) => return None,
+        None => vec![],
+    };
     Some((monster_id, form_path, (*m.handler()).clone()))
 }
 
