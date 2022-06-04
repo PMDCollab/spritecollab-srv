@@ -11,6 +11,8 @@ services:
     ports:
       - "31114:3000"
     stop_grace_period: 10s
+    depends_on:
+      - redis
   redis:
     restart: always
     image: redis:7
