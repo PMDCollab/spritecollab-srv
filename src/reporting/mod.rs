@@ -86,6 +86,15 @@ pub async fn init_reporting() -> (Arc<Reporting>, ReportingJoinHandle) {
                     },
                 )
             }
+            Err(DiscordSetupError::NoChannelsProvided) => {
+                warn!("Discord was not set up, since no channel was provided.");
+                (
+                    Arc::new(Reporting { discord_bot: None }),
+                    ReportingJoinHandle {
+                        discord_join_handle: None,
+                    },
+                )
+            }
             Err(err) => {
                 error!("Failed setting up Discord: {:?}", err);
                 panic!("Failed setting up Discord.");

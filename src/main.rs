@@ -27,13 +27,16 @@ use crate::scheduler::DataRefreshScheduler;
 use crate::schema::{Context, Query};
 use crate::sprite_collab::SpriteCollab;
 use backtrace::Backtrace;
+use hyper::body::Bytes;
+use hyper::http::HeaderValue;
 use hyper::{
     server::Server,
     service::{make_service_fn, service_fn},
     Body, Method, Response, StatusCode,
 };
+use juniper::futures::StreamExt;
 use juniper::{EmptyMutation, EmptySubscription, RootNode};
-use log::{error, info};
+use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use tokio::runtime::Handle;
 use tokio::task;
@@ -79,7 +82,32 @@ async fn main() {
                     Ok::<_, Infallible>(match (req.method(), req.uri().path()) {
                         (&Method::GET, "/") => juniper_hyper::graphiql("/graphql", None).await,
                         (&Method::GET, "/graphql") | (&Method::POST, "/graphql") => {
-                            juniper_hyper::graphql(root_node, ctx, req).await
+                            let mut response = juniper_hyper::graphql(root_node, ctx, req).await;
+                            response.headers_mut().insert(
+                                "Access-Control-Allow-Origin",
+                                HeaderValue::try_from("*").unwrap(),
+                            );
+                            if response.status() != StatusCode::OK {
+                                let body: Body = take(response.body_mut());
+                                let collected: Vec<Result<Bytes, hyper::Error>> =
+                                    body.collect().await;
+                                let collected =
+                                    collected.into_iter().collect::<Result<Vec<_>, _>>();
+                                if let Ok(body) = collected {
+                                    let body_cnt = body.into_iter().flatten().collect::<Vec<u8>>();
+                                    warn!(
+                                        "GraphQL request failed: {}",
+                                        String::from_utf8_lossy(&body_cnt)
+                                    );
+                                    *response.body_mut() = Body::from(body_cnt);
+                                } else {
+                                    warn!("GraphQL request failed. Failed to parse body.");
+                                    *response.body_mut() = Body::from(
+                                        "Internal server error while trying to display error.",
+                                    );
+                                }
+                            }
+                            response
                         }
                         (method, path) => {
                             match match_and_process_assets_path(

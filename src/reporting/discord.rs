@@ -51,6 +51,8 @@ const REPORT_DATAFILES_COOLDOWN_H: i64 = 12;
 pub enum DiscordSetupError {
     #[error("No Discord token was provided.")]
     NoTokenProvided,
+    #[error("No Discord channel was provided.")]
+    NoChannelsProvided,
     #[error("{0}")]
     SerenityError(#[from] serenity::Error),
     #[error("Invalid Discord channel ID in configuration: {0}")]
@@ -307,6 +309,9 @@ impl DiscordBot {
 
 pub(crate) async fn discord_main(
 ) -> Result<(DiscordBot, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
+    if Config::DiscordChannels.get().is_empty() {
+        return Err(DiscordSetupError::NoChannelsProvided);
+    }
     match Config::DiscordToken.get_or_none() {
         None => Err(DiscordSetupError::NoTokenProvided),
         Some(token) => Ok(DiscordBot::new(Client::builder(token, GatewayIntents::empty())).await?),
