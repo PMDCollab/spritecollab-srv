@@ -272,6 +272,8 @@ impl<'a> MonsterFormCollector<'a> {
         }
     }
 
+    // TODO: This needs to be refactored so MonsterFormCollector just implements IntoIterator,
+    //       and MappedFormIterator is just a "normal" iterator.
     pub fn map<F, T>(&'a self, map_fn: F) -> MappedFormIterator<'a, F, T>
     where
         F: Fn((Vec<i32>, Vec<String>, &'a Group)) -> T + 'a,

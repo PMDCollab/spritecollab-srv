@@ -1,8 +1,10 @@
+use crate::Config;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,6 +55,21 @@ impl AnimDataXml {
         let file = File::open(path)?;
         let file_reader = BufReader::new(file);
         Ok(Self::from_reader(file_reader)?)
+    }
+
+    pub fn open_for_form(
+        monster_idx: i32,
+        path_to_form: &[i32],
+    ) -> Result<Self, AnimDataXmlOpenError> {
+        let mut form_joined = path_to_form.iter().map(|v| format!("{:04}", v)).join("/");
+        if !form_joined.is_empty() {
+            form_joined = format!("/{}", form_joined);
+        }
+        let path = PathBuf::from(Config::Workdir.get()).join(&format!(
+            "spritecollab/sprite/{:04}{}/AnimData.xml",
+            monster_idx, form_joined
+        ));
+        Self::open(&path)
     }
 
     pub fn from_reader<R: Read>(r: R) -> Result<Self, serde_xml_rs::Error> {

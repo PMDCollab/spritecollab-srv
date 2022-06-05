@@ -23,7 +23,6 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
 use std::iter::once;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Handle;
 use tokio::task;
@@ -349,15 +348,8 @@ impl<'a> MonsterFormSprites<'a> {
         monster_idx: i32,
         path_to_form: &[i32],
     ) -> FieldResult<CacheBehaviour<HashMap<String, String>>> {
-        let mut form_joined = path_to_form.iter().map(|v| format!("{:04}", v)).join("/");
-        if !form_joined.is_empty() {
-            form_joined = format!("/{}", form_joined);
-        }
-        let path = PathBuf::from(SystemConfig::Workdir.get()).join(&format!(
-            "spritecollab/sprite/{:04}{}/AnimData.xml",
-            monster_idx, form_joined
-        ));
-        let xml = AnimDataXml::open(path).map_err(Self::failed_xml_fetch)?;
+        let xml = AnimDataXml::open_for_form(monster_idx, path_to_form)
+            .map_err(Self::failed_xml_fetch)?;
         Ok(CacheBehaviour::Cache(xml.get_action_copies()))
     }
 

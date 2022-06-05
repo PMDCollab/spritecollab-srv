@@ -3,11 +3,16 @@ pub mod credit_names;
 pub mod sprite_config;
 pub mod tracker;
 
+use crate::datafiles::anim_data_xml::{AnimDataXml, AnimDataXmlOpenError};
+use crate::datafiles::tracker::{MonsterFormCollector, Tracker};
 use crate::reporting::Reporting;
 use crate::ReportingEvent;
+use anyhow::anyhow;
 use ellipse::Ellipse;
+use itertools::Itertools;
 use std::fs::read_to_string;
 use std::future::Future;
+use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
@@ -51,6 +56,14 @@ pub enum DatafilesReport {
     CsvDeserializeError(PathBuf, Arc<csv::Error>),
     IoError(PathBuf, Arc<std::io::Error>),
     CreditsDuplicateCreditId(PathBuf, String),
+    AnimDataXmlErrors(Vec<(i32, Vec<i32>, Arc<AnimDataXmlOpenError>)>),
+}
+
+// not pretty or anything, but does the job for us.
+impl From<DatafilesReport> for anyhow::Error {
+    fn from(_: DatafilesReport) -> Self {
+        anyhow!("A datafile import error was raised, see the log reports for further information.")
+    }
 }
 
 #[cfg(feature = "discord")]
@@ -85,6 +98,13 @@ impl DatafilesReport {
             DatafilesReport::CreditsDuplicateCreditId(file_path, err) => {
                 let fname = file_path.file_name().unwrap().to_string_lossy();
                 format!("Failed reading {}: {}", fname, err)
+            }
+            DatafilesReport::AnimDataXmlErrors(errs) => {
+                once("Failed reading one or more animation data XML files:".to_string())
+                    .chain(errs.iter().map(|(monster_id, form_path, err)| {
+                        format!("{}/{}: {:?}", monster_id, form_path.iter().join("/"), err)
+                    }))
+                    .join("\n")
             }
             DatafilesReport::Ok => "Success.".to_string(),
         }
@@ -136,6 +156,18 @@ impl DatafilesReport {
                         DISCORD_UPDATE_INFO, fname, err
                     )
                 }
+                DatafilesReport::AnimDataXmlErrors(errs) => {
+                    let errors = errs
+                        .iter()
+                        .map(|(monster_id, form_path, err)| {
+                            format!("{}/{}: {:?}", monster_id, form_path.iter().join("/"), err)
+                        })
+                        .join("\n");
+                    format!(
+                        "*{}*\n\n**Description**:\nFailed reading one or more AnimData.xml files: ```\n{}\n```",
+                        DISCORD_UPDATE_INFO, errors
+                    )
+                }
                 DatafilesReport::Ok => "The SpriteCollab data update is working again.".to_string(),
             },
         )
@@ -180,4 +212,42 @@ where
         }
     }
     out
+}
+
+pub async fn try_read_in_anim_data_xml<R: AsRef<Reporting>>(
+    tracker: &Tracker,
+    reporting: R,
+) -> Result<(), DatafilesReport> {
+    let errs = tracker
+        .keys()
+        .flat_map(|group_id| {
+            let group_id = *group_id as i32;
+            #[allow(clippy::map_flatten)] // See comment at MonsterFormCollector::map
+            MonsterFormCollector::collect(tracker, group_id)
+                .unwrap()
+                .map(|(path, _, group)| {
+                    if group.sprite_complete == 0 {
+                        return None;
+                    }
+                    if let Err(e) = AnimDataXml::open_for_form(group_id, &path) {
+                        Some((group_id, path, Arc::new(e)))
+                    } else {
+                        None
+                    }
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    if !errs.is_empty() {
+        let e = DatafilesReport::AnimDataXmlErrors(errs);
+        reporting
+            .as_ref()
+            .send_event(ReportingEvent::UpdateDatafiles(e.clone()))
+            .await;
+        Err(e)
+    } else {
+        Ok(())
+    }
 }

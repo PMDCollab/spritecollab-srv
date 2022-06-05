@@ -3,7 +3,7 @@ use crate::cache::ScCache;
 use crate::datafiles::credit_names::{read_credit_names, CreditNames};
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
 use crate::datafiles::tracker::{read_tracker, Tracker};
-use crate::datafiles::{read_and_report_error, DatafilesReport};
+use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml, DatafilesReport};
 use crate::reporting::Reporting;
 use crate::{Config, ReportingEvent};
 use anyhow::Error;
@@ -197,7 +197,7 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
         create_repo(&repo_path, &Config::GitRepo.get())?;
     }
 
-    Ok(SpriteCollabData::new(
+    let scd = SpriteCollabData::new(
         read_and_report_error(
             &repo_path.join("sprite_config.json"),
             read_sprite_config,
@@ -211,7 +211,11 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
             &reporting,
         )
         .await?,
-    ))
+    );
+
+    // Also try to recursively read in all AnimData.xml files, for validation.
+    try_read_in_anim_data_xml(&scd.tracker, &reporting).await?;
+    Ok(scd)
 }
 
 fn try_update_repo(path: &Path) -> Result<(), Error> {
