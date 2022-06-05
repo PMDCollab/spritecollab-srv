@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::future::Future;
+use std::iter::once;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::runtime::Handle;
@@ -534,6 +535,19 @@ impl MonsterForm {
         path
     }
 
+    #[graphql(
+        description = "The path to this form (including the monster ID) as it's specified in the SpriteCollab tracker.json file and repository file structure."
+    )]
+    fn full_path(&self) -> String {
+        let mut path = once(format!("{:04}", self.id))
+            .chain(self.form_id.iter().map(|v| format!("{:04}", v)))
+            .join("/");
+        if path.ends_with('/') {
+            path.truncate(path.len() - 1);
+        }
+        path
+    }
+
     #[graphql(description = "Human-readable name of this form.")]
     fn name(&self) -> String {
         self.data.name.clone()
@@ -584,8 +598,15 @@ fn monster_not_found(id: i32) -> FieldError {
 #[graphql_object(Context = Context)]
 impl Monster {
     #[graphql(description = "ID of this monster.")]
-    async fn id(&self, _context: &Context) -> FieldResult<i32> {
+    async fn id(&self) -> FieldResult<i32> {
         Ok(self.id)
+    }
+
+    #[graphql(
+        description = "Raw ID of this monster, as a string. This is a 4-character numeric string, padded with leading zeroes."
+    )]
+    async fn raw_id(&self) -> FieldResult<String> {
+        Ok(format!("{:04}", self.id))
     }
 
     #[graphql(description = "Human-readable name of this monster.")]
@@ -834,7 +855,7 @@ pub struct Query;
 impl Query {
     #[graphql(description = "Version of this API.")]
     fn api_version(_context: &Context) -> &str {
-        "1.0"
+        "1.1"
     }
 
     #[graphql(
