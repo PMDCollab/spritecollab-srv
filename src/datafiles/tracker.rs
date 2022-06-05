@@ -18,14 +18,14 @@ pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
 
 pub type Tracker = HashMap<i64, Group>;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 pub struct Credit {
     pub primary: String,
     pub secondary: Vec<String>,
     pub total: i64,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 pub struct Group {
     pub canon: bool,
     pub modreward: bool,

@@ -10,7 +10,7 @@ pub async fn read_sprite_config<P: AsRef<Path>>(path: P) -> DataReadResult<Sprit
     Ok(serde_json::from_reader(BufReader::new(input))?)
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub struct SpriteConfig {
     pub portrait_size: i32,
     pub portrait_tile_x: i32,

@@ -1,8 +1,9 @@
 //! Optional (`discord` feature) Discord status reporting for the server.
 
+use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
-use log::{info, warn};
-use std::mem::discriminant;
+use log::{info, trace, warn};
+use std::mem::{discriminant, ManuallyDrop};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -14,17 +15,33 @@ use serenity::client::bridge::gateway::ShardManager;
 use serenity::client::ClientBuilder;
 use serenity::http::CacheHttp;
 use serenity::model::channel::{Channel, GuildChannel};
-use serenity::model::prelude::Ready;
+use serenity::model::prelude::{Ready, User};
 use serenity::prelude::*;
 use serenity::utils::Colour;
 use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::MutexGuard;
+use tokio::time::timeout;
+
+type RequestId = u64;
+type DiscordId = u64;
+type DiscordUserRequestResult = (RequestId, DiscordUserProfileResult);
+type DiscordUserProfileResult = Result<Option<DiscordProfile>, anyhow::Error>;
 
 struct ReportReceiver;
 
 impl TypeMapKey for ReportReceiver {
     type Value = Receiver<ReportingEvent>;
+}
+
+struct UserRequestResponder;
+
+impl TypeMapKey for UserRequestResponder {
+    type Value = (
+        Arc<Mutex<Receiver<(RequestId, DiscordId)>>>,
+        Arc<Sender<DiscordUserRequestResult>>,
+    );
 }
 
 struct ReadySender;
@@ -95,7 +112,7 @@ struct Handler;
 
 #[async_trait]
 impl EventHandler for Handler {
-    async fn ready(&self, ctx: Context, _ready: Ready) {
+    async fn ready(&self, mut ctx: Context, _ready: Ready) {
         // Collect and test channel IDs
         let data = ctx.data.write().await;
         let sender = data.get::<ReadySender>().unwrap();
@@ -160,7 +177,11 @@ impl EventHandler for Handler {
             let mut data = ctx.data.write().await;
             let recv = data.get_mut::<ReportReceiver>().unwrap();
             let event = recv.recv().await;
+            let (ur_recv, ur_send) = data.get_mut::<UserRequestResponder>().unwrap();
+            let ur_recv = ur_recv.clone();
+            let ur_send = ur_send.clone();
             drop(data);
+            Self::process_user_requests(ur_recv, ur_send, &mut ctx).await;
             match event {
                 None => {
                     let mut data = ctx.data.write().await;
@@ -168,6 +189,7 @@ impl EventHandler for Handler {
                     manager.lock().await.shutdown_all().await;
                     return;
                 }
+                Some(ReportingEvent::__Wakeup) => { /* continue */ }
                 Some(ReportingEvent::__Shutdown) => {
                     let mut data = ctx.data.write().await;
                     let manager = data.get_mut::<ShardManagerShared>().unwrap();
@@ -247,26 +269,59 @@ impl Handler {
             }
         }
     }
+
+    async fn process_user_requests(
+        recv: Arc<Mutex<Receiver<(RequestId, DiscordId)>>>,
+        send: Arc<Sender<DiscordUserRequestResult>>,
+        context: &mut Context,
+    ) {
+        trace!("UserReq[?]D - Checking...",);
+        while let Ok((req, user_id)) = recv.lock().await.try_recv() {
+            trace!("UserReq[{}]D - Processing...", req);
+            // Try cache first
+            if let Some(user) = context.cache.user(user_id) {
+                send.send((req, Ok(Some(user.into())))).await.ok();
+            } else {
+                let user_res = context.http.get_user(user_id).await;
+                send.send((
+                    req,
+                    user_res
+                        .map(DiscordProfile::from)
+                        .map(Some)
+                        .map_err(anyhow::Error::from),
+                ))
+                .await
+                .ok();
+            }
+            trace!("UserReq[{}]D - Done!", req);
+        }
+    }
+}
+
+/// Most basic information about a Discord user.
+#[derive(Clone, Debug)]
+pub struct DiscordProfile {
+    pub id: DiscordId,
+    pub name: String,
+    pub discriminator: String,
+}
+
+impl From<User> for DiscordProfile {
+    fn from(u: User) -> Self {
+        Self {
+            id: u.id.0,
+            name: u.name,
+            discriminator: u.discriminator.to_string(),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct DiscordBot {
-    sender: Sender<ReportingEvent>,
-}
-
-impl DiscordBot {
-    pub(crate) async fn send_event(&self, event: ReportingEvent) {
-        self.sender
-            .send(event)
-            .await
-            .expect("Failed to send event to Discord");
-    }
-    pub(crate) async fn shutdown(&self) {
-        self.sender
-            .send(ReportingEvent::__Shutdown)
-            .await
-            .expect("Failed to send event to Discord");
-    }
+    reporting_sender: Sender<ReportingEvent>,
+    user_request_id_increment: Mutex<u64>,
+    user_request_sender: Sender<(RequestId, DiscordId)>,
+    user_request_answer_receiver: Mutex<Receiver<DiscordUserRequestResult>>,
 }
 
 impl DiscordBot {
@@ -274,11 +329,17 @@ impl DiscordBot {
         client_builder: ClientBuilder,
     ) -> Result<(Self, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
         let (reporting_sender, reporting_receiver) = channel(20);
+        let (user_request_sender, user_request_receiver) = channel(20);
+        let (user_request_answer_sender, user_request_answer_receiver) = channel(20);
         let (ready_sender, mut ready_receiver) = channel(1);
         let mut client = client_builder.event_handler(Handler).await?;
 
         let mut data = client.data.write().await;
         data.insert::<ReportReceiver>(reporting_receiver);
+        data.insert::<UserRequestResponder>((
+            Arc::new(Mutex::new(user_request_receiver)),
+            Arc::new(user_request_answer_sender),
+        ));
         data.insert::<ReadySender>(ready_sender);
         data.insert::<ShardManagerShared>(client.shard_manager.clone());
         data.insert::<DatafilesFailedLastTypeAndTime>((None, Utc::now()));
@@ -300,10 +361,90 @@ impl DiscordBot {
 
         Ok((
             DiscordBot {
-                sender: reporting_sender,
+                reporting_sender,
+                user_request_id_increment: Mutex::new(0),
+                user_request_sender,
+                user_request_answer_receiver: Mutex::new(user_request_answer_receiver),
             },
             handle,
         ))
+    }
+
+    pub async fn send_event(&self, event: ReportingEvent) {
+        self.reporting_sender
+            .send(event)
+            .await
+            .expect("Failed to send event to Discord");
+    }
+
+    pub async fn shutdown(&self) {
+        self.reporting_sender
+            .send(ReportingEvent::__Shutdown)
+            .await
+            .expect("Failed to send event to Discord");
+    }
+
+    /// Returns the profile of the user with the given ID, if the bot is able to access it,
+    /// and if it's a valid profile. Else None is returned.
+    /// On API errors or other state errors, an error is returned.
+    pub async fn get_user(
+        &self,
+        user_id: DiscordId,
+    ) -> Result<Option<DiscordProfile>, anyhow::Error> {
+        // We make sure there are no async race conditions, by forcing to hold this guard
+        // until the end of the function, since messages are expected to be received sequentially
+        // for each request.
+        // As a fallback we have request timeouts and tag the messages with request IDs.
+        let mut locked_increment = ManuallyDrop::new(self.user_request_id_increment.lock().await);
+        // We need to do this in a sub-function since `?` would otherwise prevent the drop code below
+        // to be skipped. Alternatively we could activate the try block feature...
+        let response = self.get_user_inner(user_id, &mut locked_increment).await;
+        // Explicitly drop guard after everything is done.
+        drop(ManuallyDrop::into_inner(locked_increment));
+        response
+    }
+
+    async fn get_user_inner<'a, 'b>(
+        &'a self,
+        user_id: DiscordId,
+        locked_increment: &'b mut ManuallyDrop<MutexGuard<'a, u64>>,
+    ) -> Result<Option<DiscordProfile>, anyhow::Error> {
+        let request_id = ***locked_increment;
+        ***locked_increment += 1;
+
+        trace!("UserReq[{}]M - Sending...", request_id);
+        self.user_request_sender.send((request_id, user_id)).await?;
+
+        trace!("UserReq[{}]M - Sending Wakeup...", request_id);
+        self.reporting_sender
+            .send(ReportingEvent::__Wakeup)
+            .await
+            .ok();
+
+        let response;
+        loop {
+            trace!("UserReq[{}]M - Waiting Response...", request_id);
+            let (response_request_id, lresponse) = timeout(
+                std::time::Duration::from_secs(30),
+                self.user_request_answer_receiver.lock().await.recv(),
+            )
+            .await?
+            .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
+            if response_request_id != request_id {
+                // This shouldn't happen, but oh well.
+                trace!(
+                    "UserReq[{}]M - Unexpected response ID: {}",
+                    request_id,
+                    response_request_id
+                );
+                continue;
+            }
+            response = lresponse;
+            break;
+        }
+
+        trace!("UserReq[{}]M - Done!", request_id);
+        response
     }
 }
 

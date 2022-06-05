@@ -48,7 +48,7 @@ pub async fn read_credit_names<P: AsRef<Path>>(path: P) -> DataReadResult<Credit
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CreditNames {
     /// Vector that contains all rows.
     data: Vec<CreditNamesRow>,
@@ -79,7 +79,7 @@ impl CreditNames {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct CreditNamesRow {
     #[serde(
         deserialize_with = "cleanup_discord_id",

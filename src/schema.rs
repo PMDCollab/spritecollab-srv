@@ -1,3 +1,5 @@
+#![cfg_attr(not(feature = "discord"), allow(unused_variables))]
+
 use crate::assets::url::{get_url, AssetType};
 use crate::cache::ScCache;
 use crate::config::Config as SystemConfig;
@@ -762,16 +764,70 @@ impl From<&SpriteConfig> for Config {
     }
 }
 
-#[derive(GraphQLObject, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Credit {
-    #[graphql(description = "Discord ID or absentee ID. Guaranteed to be an ASCII string.")]
     id: String,
+    name: Option<String>,
+    contact: Option<String>,
+}
+
+#[graphql_object(Context = Context)]
+impl Credit {
+    #[graphql(description = "Discord ID or absentee ID. Guaranteed to be an ASCII string.")]
+    fn id(&self) -> String {
+        self.id.clone()
+    }
+
     #[graphql(
         description = "The human-readable name of the author. Guaranteed to be an ASCII string."
     )]
-    name: Option<String>,
+    fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+
     #[graphql(description = "Contact information for this author.")]
-    contact: Option<String>,
+    fn contact(&self) -> Option<String> {
+        self.contact.clone()
+    }
+
+    #[graphql(
+        description = "Discord name and discriminator in the form Name#Discriminator (eg. Capypara#7887), if this is a credit for a Discord profile, and the server can resolve the ID to a Discord profile."
+    )]
+    async fn discord_handle(&self, context: &Context) -> FieldResult<Option<String>> {
+        #[cfg(feature = "discord")]
+        {
+            if let Some(discord) = &context.discord {
+                context
+                    .cached_may_fail_chain(format!("discord_user|{}", self.id), || async {
+                        let id = self.id.parse().ok();
+                        if id.is_none() {
+                            return Ok(CacheBehaviour::NoCache(None));
+                        }
+                        let response = discord.get_user(id.unwrap()).await;
+                        match response {
+                            Ok(profile) => {
+                                Ok(CacheBehaviour::Cache(profile.map(|user| {
+                                    format!("{}#{}", user.name, user.discriminator)
+                                })))
+                            }
+                            Err(e) => Err(FieldError::new(
+                                "Internal Server Error trying to resolve Discord ID",
+                                graphql_value!({
+                                    "details": (e.to_string())
+                                }),
+                            )),
+                        }
+                    })
+                    .await
+            } else {
+                Ok(None)
+            }
+        }
+        #[cfg(not(feature = "discord"))]
+        {
+            Ok(None)
+        }
+    }
 }
 
 impl Credit {
@@ -806,14 +862,20 @@ pub struct Context {
     collab: Arc<SpriteCollab>,
     #[allow(dead_code)] // potentially for future use.
     reporting: Arc<Reporting>,
+    #[cfg(feature = "discord")]
+    discord: Option<Arc<crate::reporting::DiscordBot>>,
 }
 
 impl Context {
     pub fn new(collab: Arc<SpriteCollab>, reporting: Arc<Reporting>) -> Self {
+        #[cfg(feature = "discord")]
+        let discord = reporting.discord_bot.clone();
         Context {
             this_server_url: SystemConfig::Address.get_or_none().unwrap_or_default(),
             collab,
             reporting,
+            #[cfg(feature = "discord")]
+            discord,
         }
     }
 }

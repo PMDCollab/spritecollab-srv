@@ -5,10 +5,12 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 #[cfg(feature = "discord")]
-use crate::reporting::discord::{DiscordBot, DiscordSetupError};
+mod discord;
 
 #[cfg(feature = "discord")]
-mod discord;
+pub use self::discord::DiscordBot;
+#[cfg(feature = "discord")]
+use crate::reporting::discord::DiscordSetupError;
 
 /// A wrapper around one or multiple thread/async join handles and/or
 /// awaited futures that are used for reporting.
@@ -45,7 +47,7 @@ impl ReportingJoinHandle {
 
 pub struct Reporting {
     #[cfg(feature = "discord")]
-    discord_bot: Option<DiscordBot>,
+    pub(crate) discord_bot: Option<Arc<DiscordBot>>,
 }
 
 impl Reporting {
@@ -71,7 +73,7 @@ pub async fn init_reporting() -> (Arc<Reporting>, ReportingJoinHandle) {
         match discord::discord_main().await {
             Ok((app, join_handle)) => (
                 Arc::new(Reporting {
-                    discord_bot: Some(app),
+                    discord_bot: Some(Arc::new(app)),
                 }),
                 ReportingJoinHandle {
                     discord_join_handle: Some(join_handle),
@@ -115,7 +117,12 @@ pub enum ReportingEvent {
     Shutdown,
     UpdateDatafiles(DatafilesReport),
     #[doc(hidden)]
+    /// Signal for all reporting threads to shut down.
     __Shutdown,
+    #[doc(hidden)]
+    /// This is not an actual event, but a signal that reporting handlers should wake up and
+    /// potentially process some other actions.
+    __Wakeup,
 }
 
 impl<'a> ReportingEvent {

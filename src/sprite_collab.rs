@@ -30,6 +30,7 @@ enum State {
     Ready,
 }
 
+#[derive(Eq, PartialEq)]
 pub struct SpriteCollabData {
     pub sprite_config: SpriteConfig,
     pub tracker: Arc<Tracker>,
@@ -101,12 +102,16 @@ impl SpriteCollab {
         }
         if let Some(new_data) = refresh_data(slf.reporting.clone()).await {
             let mut lock_state = slf.state.lock().await;
+            let changed;
             {
                 let mut lock_data = slf.current_data.write().unwrap();
+                changed = lock_data.deref() == &new_data;
                 *lock_data = new_data;
                 *lock_state = State::Ready;
             }
-            let _: Option<()> = slf.redis.flushall(false).await.ok();
+            if changed {
+                let _: Option<()> = slf.redis.flushall(false).await.ok();
+            }
         }
     }
 
