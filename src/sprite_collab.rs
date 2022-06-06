@@ -6,7 +6,7 @@ use crate::datafiles::tracker::{read_tracker, Tracker};
 use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml, DatafilesReport};
 use crate::reporting::Reporting;
 use crate::{Config, ReportingEvent};
-use anyhow::Error;
+use anyhow::{anyhow, Error};
 use async_trait::async_trait;
 use fred::prelude::*;
 use fred::types::RedisKey;
@@ -19,7 +19,7 @@ use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
-use tokio::fs::create_dir_all;
+use tokio::fs::{create_dir_all, remove_dir_all};
 use tokio::sync::Mutex;
 
 const GIT_REPO_DIR: &str = "spritecollab";
@@ -191,9 +191,17 @@ async fn refresh_data(reporting: Arc<Reporting>) -> Option<SpriteCollabData> {
 
 async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollabData, Error> {
     let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
-    create_dir_all(&repo_path).await?;
-    if try_update_repo(&repo_path).is_err() {
-        // If this fails, throw the repo away (if applicable) and clone it new.
+    if repo_path.exists() {
+        if let Err(clone_e) = try_update_repo(&repo_path) {
+            // If this fails, throw the repo away (if applicable) and clone it new.
+            warn!("Failed to update repo, deleting and cloning it again: {}", clone_e);
+            if let Err(e) = remove_dir_all(&repo_path).await {
+                warn!("Failed to delete repo directory: {}", e);
+            }
+            create_repo(&repo_path, &Config::GitRepo.get())?;
+        }
+    } else {
+        create_dir_all(&repo_path).await?;
         create_repo(&repo_path, &Config::GitRepo.get())?;
     }
 
@@ -219,6 +227,9 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
 }
 
 fn try_update_repo(path: &Path) -> Result<(), Error> {
+    if !path.join(".git").exists() {
+        return Err(anyhow!("Missing .git directory"));
+    }
     let repo = Repository::open(path)?;
     let mut remote = repo.find_remote("origin")?;
     remote.fetch(&["master"], None, None)?;

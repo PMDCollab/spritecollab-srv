@@ -328,9 +328,9 @@ impl DiscordBot {
     pub async fn new(
         client_builder: ClientBuilder,
     ) -> Result<(Self, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
-        let (reporting_sender, reporting_receiver) = channel(20);
-        let (user_request_sender, user_request_receiver) = channel(20);
-        let (user_request_answer_sender, user_request_answer_receiver) = channel(20);
+        let (reporting_sender, reporting_receiver) = channel(50);
+        let (user_request_sender, user_request_receiver) = channel(1000);
+        let (user_request_answer_sender, user_request_answer_receiver) = channel(50);
         let (ready_sender, mut ready_receiver) = channel(1);
         let mut client = client_builder.event_handler(Handler).await?;
 
@@ -424,12 +424,19 @@ impl DiscordBot {
         let response;
         loop {
             trace!("UserReq[{}]M - Waiting Response...", request_id);
-            let (response_request_id, lresponse) = timeout(
-                std::time::Duration::from_secs(30),
-                self.user_request_answer_receiver.lock().await.recv(),
-            )
-            .await?
-            .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
+
+            let (response_request_id, lresponse) =
+                timeout(
+                    std::time::Duration::from_secs(3),
+                    self.user_request_answer_receiver.lock().await.recv(),
+                )
+                .await
+                .map_err(|e| {
+                    warn!("Got timeout while waiting for Discord user request answer: {:?}", e);
+                    e
+                })?
+                .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
+
             if response_request_id != request_id {
                 // This shouldn't happen, but oh well.
                 trace!(
