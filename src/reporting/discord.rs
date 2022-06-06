@@ -1,9 +1,12 @@
 //! Optional (`discord` feature) Discord status reporting for the server.
 
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
 use log::{info, trace, warn};
-use std::mem::{discriminant, ManuallyDrop};
+use std::mem::{discriminant, take};
+use std::ops::Deref;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -21,13 +24,28 @@ use serenity::utils::Colour;
 use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::MutexGuard;
 use tokio::time::timeout;
 
-type RequestId = u64;
+#[derive(Debug, Clone)]
+pub struct ArcedAnyhowError(Arc<anyhow::Error>);
+
+impl<E> From<E> for ArcedAnyhowError where E: Into<anyhow::Error> {
+    fn from(e: E) -> Self {
+        ArcedAnyhowError(Arc::new(e.into()))
+    }
+}
+
+impl Deref for ArcedAnyhowError {
+    type Target = anyhow::Error;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 type DiscordId = u64;
-type DiscordUserRequestResult = (RequestId, DiscordUserProfileResult);
-type DiscordUserProfileResult = Result<Option<DiscordProfile>, anyhow::Error>;
+type DiscordUserRequestResult = (DiscordId, DiscordUserProfileResult);
+pub type DiscordUserProfileResult = Result<Option<DiscordProfile>, ArcedAnyhowError>;
 
 struct ReportReceiver;
 
@@ -39,7 +57,7 @@ struct UserRequestResponder;
 
 impl TypeMapKey for UserRequestResponder {
     type Value = (
-        Arc<Mutex<Receiver<(RequestId, DiscordId)>>>,
+        Arc<Mutex<Receiver<DiscordId>>>,
         Arc<Sender<DiscordUserRequestResult>>,
     );
 }
@@ -63,6 +81,7 @@ impl TypeMapKey for DatafilesFailedLastTypeAndTime {
 }
 
 const REPORT_DATAFILES_COOLDOWN_H: i64 = 12;
+const GET_USER_CACHE_DURATION_MIN: i64 = 20;
 
 #[derive(Error, Debug)]
 pub enum DiscordSetupError {
@@ -271,29 +290,31 @@ impl Handler {
     }
 
     async fn process_user_requests(
-        recv: Arc<Mutex<Receiver<(RequestId, DiscordId)>>>,
+        recv: Arc<Mutex<Receiver<DiscordId>>>,
         send: Arc<Sender<DiscordUserRequestResult>>,
         context: &mut Context,
     ) {
         trace!("UserReq[?]D - Checking...",);
-        while let Ok((req, user_id)) = recv.lock().await.try_recv() {
-            trace!("UserReq[{}]D - Processing...", req);
+        while let Ok(user_id) = recv.lock().await.try_recv() {
+            trace!("UserReq[{}]D - Processing...", user_id);
             // Try cache first
             if let Some(user) = context.cache.user(user_id) {
-                send.send((req, Ok(Some(user.into())))).await.ok();
+                send.send((user_id, Ok(Some(user.into())))).await.ok();
             } else {
                 let user_res = context.http.get_user(user_id).await;
                 send.send((
-                    req,
+                    user_id,
                     user_res
                         .map(DiscordProfile::from)
                         .map(Some)
-                        .map_err(anyhow::Error::from),
+                        .map_err(anyhow::Error::from)
+                        .map_err(Arc::new)
+                        .map_err(ArcedAnyhowError),
                 ))
                 .await
                 .ok();
             }
-            trace!("UserReq[{}]D - Done!", req);
+            trace!("UserReq[{}]D - Done!", user_id);
         }
     }
 }
@@ -317,20 +338,106 @@ impl From<User> for DiscordProfile {
 }
 
 #[derive(Debug)]
+struct PendingUserRequest {
+    age: DateTime<Utc>, 
+    pending_requests: usize, 
+    response: Option<DiscordUserProfileResult>
+}
+
+trait PendingUserRequestMap {
+    fn gc_pending_map(&mut self);
+    fn check_contains(&mut self, user_id: DiscordId) -> bool;
+    fn pending_insert(&mut self, user_id: DiscordId);
+    fn pending_increase(&mut self, user_id: DiscordId);
+    fn take_pending_response(&mut self, user_id: DiscordId) -> Option<DiscordUserProfileResult>;
+    fn pending_stop_waiting(&mut self, user_id: DiscordId);
+    fn place_pending_response(&mut self, user_id: DiscordId, response: DiscordUserProfileResult);
+    fn pending_still_valid(age: &DateTime<Utc>) -> bool {
+        &( Utc::now()  - Duration::minutes(GET_USER_CACHE_DURATION_MIN)) < age
+    }
+}
+
+impl PendingUserRequestMap for HashMap<DiscordId, PendingUserRequest> {
+    fn gc_pending_map(&mut self) {
+        *self = take(self).into_iter().filter(|(_, v)| Self::pending_still_valid(&v.age)).collect();
+    }
+
+    fn check_contains(&mut self, user_id: DiscordId) -> bool {
+        match self.entry(user_id) {
+            Entry::Occupied(e) => {
+                let e = Self::pending_still_valid(&e.get().age);
+                if !e {
+                    trace!("UserReq[{}]M - Cache timed out.", user_id);
+                }
+                e
+            },
+            Entry::Vacant(_) => false,
+        }
+    }
+
+    fn pending_insert(&mut self, user_id: DiscordId) {
+        self.insert(user_id, PendingUserRequest {
+            age: Utc::now(),
+            pending_requests: 0,
+            response: None,
+        });
+    }
+
+    fn pending_increase(&mut self, user_id: DiscordId) {
+        self.get_mut(&user_id).as_mut().unwrap().pending_requests += 1;
+    }
+
+    fn take_pending_response(&mut self, user_id: DiscordId) -> Option<DiscordUserProfileResult> {
+        let mut new_count = 999;
+        let mut resp = None;
+        if let Some(PendingUserRequest { pending_requests, response: Some(response), .. }) = self.get_mut(&user_id) {
+            if *pending_requests > 0 {
+                *pending_requests -= 1;
+            }
+            new_count = *pending_requests;
+            resp = Some(response.clone());
+        }
+        if new_count == 0 && !Self::pending_still_valid(&self.get(&user_id).unwrap().age) {
+            self.remove(&user_id);
+        }
+        resp
+    }
+
+    fn pending_stop_waiting(&mut self, user_id: DiscordId) {
+        let mut new_count = 999;
+        if let Some(PendingUserRequest { pending_requests, .. }) = self.get_mut(&user_id) {
+            if *pending_requests > 0 {
+                *pending_requests -= 1;
+            }
+            new_count = *pending_requests;
+        }
+        if new_count == 0 && !Self::pending_still_valid(&self.get(&user_id).unwrap().age) {
+            self.remove(&user_id);
+        }
+    }
+
+    fn place_pending_response(&mut self, user_id: DiscordId, the_response: DiscordUserProfileResult) {
+        if let Some(PendingUserRequest { response, .. }) = self.get_mut(&user_id) {
+            *response = Some(the_response);
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct DiscordBot {
     reporting_sender: Sender<ReportingEvent>,
-    user_request_id_increment: Mutex<u64>,
-    user_request_sender: Sender<(RequestId, DiscordId)>,
+    user_request_sender: Sender<DiscordId>,
     user_request_answer_receiver: Mutex<Receiver<DiscordUserRequestResult>>,
+    pending_user_request_answers: Mutex<HashMap<DiscordId, PendingUserRequest>>
 }
 
 impl DiscordBot {
     pub async fn new(
         client_builder: ClientBuilder,
     ) -> Result<(Self, JoinHandle<serenity::Result<()>>), DiscordSetupError> {
-        let (reporting_sender, reporting_receiver) = channel(50);
-        let (user_request_sender, user_request_receiver) = channel(1000);
-        let (user_request_answer_sender, user_request_answer_receiver) = channel(50);
+        let (reporting_sender, reporting_receiver) = channel(500);
+        let (user_request_sender, user_request_receiver) = channel(3000);
+        let (user_request_answer_sender, user_request_answer_receiver) = channel(3000);
         let (ready_sender, mut ready_receiver) = channel(1);
         let mut client = client_builder.event_handler(Handler).await?;
 
@@ -362,9 +469,9 @@ impl DiscordBot {
         Ok((
             DiscordBot {
                 reporting_sender,
-                user_request_id_increment: Mutex::new(0),
                 user_request_sender,
                 user_request_answer_receiver: Mutex::new(user_request_answer_receiver),
+                pending_user_request_answers: Mutex::new(HashMap::new()),
             },
             handle,
         ))
@@ -390,70 +497,118 @@ impl DiscordBot {
     pub async fn get_user(
         &self,
         user_id: DiscordId,
-    ) -> Result<Option<DiscordProfile>, anyhow::Error> {
-        // We make sure there are no async race conditions, by forcing to hold this guard
-        // until the end of the function, since messages are expected to be received sequentially
-        // for each request.
-        // As a fallback we have request timeouts and tag the messages with request IDs.
-        let mut locked_increment = ManuallyDrop::new(self.user_request_id_increment.lock().await);
-        // We need to do this in a sub-function since `?` would otherwise prevent the drop code below
-        // to be skipped. Alternatively we could activate the try block feature...
-        let response = self.get_user_inner(user_id, &mut locked_increment).await;
-        // Explicitly drop guard after everything is done.
-        drop(ManuallyDrop::into_inner(locked_increment));
-        response
-    }
+    ) -> DiscordUserProfileResult {
+        if self.pre_warm_get_user(user_id).await? {
+            trace!("UserReq[{}]M - Already have a pending lookup.", user_id);
+        }
+        self.pending_user_request_answers.lock().await.pending_increase(user_id);
 
-    async fn get_user_inner<'a, 'b>(
-        &'a self,
-        user_id: DiscordId,
-        locked_increment: &'b mut ManuallyDrop<MutexGuard<'a, u64>>,
-    ) -> Result<Option<DiscordProfile>, anyhow::Error> {
-        let request_id = ***locked_increment;
-        ***locked_increment += 1;
+        // Check if we maybe have the response in the pending response list.
+        if let Some(resp) = self.pending_user_request_answers.lock().await.take_pending_response(user_id) {
+            trace!("UserReq[{}]M - Done!", user_id);
+            return resp;
+        }
 
-        trace!("UserReq[{}]M - Sending...", request_id);
-        self.user_request_sender.send((request_id, user_id)).await?;
-
-        trace!("UserReq[{}]M - Sending Wakeup...", request_id);
-        self.reporting_sender
-            .send(ReportingEvent::__Wakeup)
-            .await
-            .ok();
+        let mut max_loop_count = 100;
 
         let response;
         loop {
-            trace!("UserReq[{}]M - Waiting Response...", request_id);
+            trace!("UserReq[{}]M - Waiting Response...", user_id);
 
-            let (response_request_id, lresponse) = timeout(
-                std::time::Duration::from_secs(3),
-                self.user_request_answer_receiver.lock().await.recv(),
-            )
-            .await
-            .map_err(|e| {
-                warn!(
-                    "Got timeout while waiting for Discord user request answer: {:?}",
-                    e
-                );
-                e
-            })?
-            .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
+            let mut user_request_answer_receiver = self.user_request_answer_receiver.lock().await;
+            let answer_request = timeout(
+                std::time::Duration::from_millis(100),
+                user_request_answer_receiver.recv(),
+            );
+            let (response_request_id, lresponse) = match answer_request.await {
+                Ok(v) => v,
+                Err(_) => {
+                    // Check if we maybe have the response in the pending response list.
+                    if let Some(resp) = self.pending_user_request_answers.lock().await.take_pending_response(user_id) {
+                        Some((user_id, resp))
+                    } else {
+                        trace!("UserReq[{}]M - Timeout.", user_id);
+                        max_loop_count -= 1;
+                        if max_loop_count == 0 {
+                            trace!("UserReq[{}]M - Max loop count reached.", user_id);
+                            warn!("Timeout while trying to get Discord user profile for {}.", user_id);
+                            self.pending_user_request_answers.lock().await.pending_stop_waiting(user_id);
+                            return Err(ArcedAnyhowError(Arc::new(anyhow!("Timeout while trying to get Discord user profile for {}.", user_id))));
+                        } else {
+                            continue;
+                        }
+                    }
+                }
+            }.unwrap_or_else(|| (user_id, Err(ArcedAnyhowError(Arc::new(anyhow!("Discord thread is not available."))))));
+            drop(user_request_answer_receiver);
 
-            if response_request_id != request_id {
-                // This shouldn't happen, but oh well.
-                trace!(
-                    "UserReq[{}]M - Unexpected response ID: {}",
-                    request_id,
-                    response_request_id
-                );
-                continue;
+            let mut pending_user_request_answers = self.pending_user_request_answers.lock().await;
+            // Put the unexpected response on the pending list.
+            pending_user_request_answers.place_pending_response(response_request_id, lresponse.clone());
+
+            if response_request_id != user_id {
+                // Check if we maybe have the response in the pending response list instead.
+                if let Some(resp) = pending_user_request_answers.take_pending_response(user_id) {
+                    trace!("UserReq[{}]M - Done!", user_id);
+                    return resp;
+                }
+            } else {
+                response = lresponse;
+                break;
             }
-            response = lresponse;
-            break;
         }
 
-        trace!("UserReq[{}]M - Done!", request_id);
+        self.pending_user_request_answers.lock().await.gc_pending_map();
+        trace!("UserReq[{}]M - Done!", user_id);
         response
+    }
+
+    /// Asks the Discord bot to pre-warm the user info for the requested user ID.
+    /// This will not actually wait for the bot to send a reply. A future call to get_user() will
+    /// collect the response.
+    ///
+    /// Returns whether or not a request was already pending before
+    pub async fn pre_warm_get_user(
+        &self,
+        user_id: DiscordId,
+    ) -> Result<bool, ArcedAnyhowError> {
+        trace!("UserReq[{}]M - Locking...", user_id);
+        let mut pending_user_request_answers = self.pending_user_request_answers.lock().await;
+        let had_pending = pending_user_request_answers.check_contains(user_id);
+        #[allow(clippy::map_entry)]
+        if !had_pending {
+            trace!("UserReq[{}]M - Sending...", user_id);
+
+            if timeout(
+                std::time::Duration::from_millis(200),
+                self.user_request_sender.send(user_id)
+            ).await.is_err() {
+                // oh dear, seems like the send queue is full, wake the other thread up
+                // and hope for the best.
+                trace!("UserReq[{}]M - Sending: Reached timeout. Trying to wakeup first...", user_id);
+                self.reporting_sender
+                    .send(ReportingEvent::__Wakeup)
+                    .await
+                    .ok();
+                // Try again
+                trace!("UserReq[{}]M - Sending...", user_id);
+                timeout(
+                    std::time::Duration::from_millis(200),
+                    self.user_request_sender.send(user_id)
+                ).await??;
+            }
+            self.user_request_sender.send(user_id).await?;
+
+            pending_user_request_answers.pending_insert(user_id);
+            drop(pending_user_request_answers);
+
+            trace!("UserReq[{}]M - Sending Wakeup...", user_id);
+            self.reporting_sender
+                .send(ReportingEvent::__Wakeup)
+                .await
+                .ok();
+        }
+        Ok(had_pending)
     }
 }
 

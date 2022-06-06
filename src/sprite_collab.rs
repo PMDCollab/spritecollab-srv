@@ -111,7 +111,25 @@ impl SpriteCollab {
             }
             if changed {
                 let _: Option<()> = slf.redis.flushall(false).await.ok();
+                #[cfg(feature = "discord")]
+                slf.pre_warm_discord().await;
             }
+        }
+    }
+
+    #[cfg(feature = "discord")]
+    pub(crate) async fn pre_warm_discord(&self) {
+        debug!("Asking Discord Bot to pre-warm user list...");
+        if let Some(discord) = &self.reporting.discord_bot {
+            let credit_names = self.current_data.read().unwrap().credit_names.clone();
+            juniper::futures::future::try_join_all(credit_names.iter()
+                .filter_map(|credit| {
+                    if let Ok(id) = credit.credit_id.parse() {
+                        Some(discord.pre_warm_get_user(id))
+                    } else {
+                        None
+                    }
+                })).await.ok();
         }
     }
 

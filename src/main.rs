@@ -56,6 +56,9 @@ async fn main() {
 
     let sprite_collab = SpriteCollab::new(Config::redis_config(), reporting.clone()).await;
 
+    #[cfg(feature = "discord")]
+    sprite_collab.pre_warm_discord().await;
+
     let scheduler = Arc::new(Mutex::new(DataRefreshScheduler::new(sprite_collab.clone())));
     GlobalShutdown::add_scheduler(scheduler.clone());
 

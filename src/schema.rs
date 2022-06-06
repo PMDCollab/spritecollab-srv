@@ -24,6 +24,8 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::iter::once;
 use std::sync::Arc;
+#[allow(unused_imports)]
+use log::warn;
 use tokio::runtime::Handle;
 use tokio::task;
 
@@ -795,14 +797,22 @@ impl Credit {
                         if id.is_none() {
                             return Ok(CacheBehaviour::NoCache(None));
                         }
-                        let response = discord.get_user(id.unwrap()).await;
+                        let id = id.unwrap();
+                        let response = tokio::time::timeout(
+                            std::time::Duration::from_secs(20),
+                            discord.get_user(id)
+                        ).await;
                         match response {
-                            Ok(profile) => {
+                            Err(_) => {
+                                warn!("Timeout (on schema end) while trying to get Discord user profile for {}.", id);
+                                Ok(CacheBehaviour::NoCache(None))
+                            },
+                            Ok(Ok(profile)) => {
                                 Ok(CacheBehaviour::Cache(profile.map(|user| {
                                     format!("{}#{}", user.name, user.discriminator)
                                 })))
                             }
-                            Err(e) => Err(FieldError::new(
+                            Ok(Err(e)) => Err(FieldError::new(
                                 "Internal Server Error trying to resolve Discord ID",
                                 graphql_value!({
                                     "details": (e.to_string())
