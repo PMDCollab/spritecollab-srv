@@ -265,7 +265,7 @@ impl MonsterFormPortraits {
             &context,
             &self.0.portrait_files,
             &emotion,
-            true,
+            false,
             self.1,
             &self.2,
         )
@@ -836,14 +836,14 @@ impl Credit {
                         }
                         let id = id.unwrap();
                         let response = tokio::time::timeout(
-                            std::time::Duration::from_secs(20),
-                            discord.get_user(id)
-                        ).await;
+                            // We don't wait here for long. If we can't get it that quick,
+                            // it's not worth it.
+                            std::time::Duration::from_millis(500),
+                            discord.get_user(id),
+                        )
+                        .await;
                         match response {
-                            Err(_) => {
-                                warn!("Timeout (on schema end) while trying to get Discord user profile for {}.", id);
-                                Ok(CacheBehaviour::NoCache(None))
-                            },
+                            Err(_) => Ok(CacheBehaviour::NoCache(None)),
                             Ok(Ok(profile)) => {
                                 Ok(CacheBehaviour::Cache(profile.map(|user| {
                                     format!("{}#{}", user.name, user.discriminator)
