@@ -125,7 +125,7 @@ pub enum ReportingEvent {
     __Wakeup,
 }
 
-impl<'a> ReportingEvent {
+impl ReportingEvent {
     pub fn log(&self) {
         match self {
             ReportingEvent::Start => info!("Started server."),
