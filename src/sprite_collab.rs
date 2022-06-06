@@ -194,7 +194,10 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
     if repo_path.exists() {
         if let Err(clone_e) = try_update_repo(&repo_path) {
             // If this fails, throw the repo away (if applicable) and clone it new.
-            warn!("Failed to update repo, deleting and cloning it again: {}", clone_e);
+            warn!(
+                "Failed to update repo, deleting and cloning it again: {}",
+                clone_e
+            );
             if let Err(e) = remove_dir_all(&repo_path).await {
                 warn!("Failed to delete repo directory: {}", e);
             }

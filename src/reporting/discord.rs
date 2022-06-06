@@ -425,17 +425,19 @@ impl DiscordBot {
         loop {
             trace!("UserReq[{}]M - Waiting Response...", request_id);
 
-            let (response_request_id, lresponse) =
-                timeout(
-                    std::time::Duration::from_secs(3),
-                    self.user_request_answer_receiver.lock().await.recv(),
-                )
-                .await
-                .map_err(|e| {
-                    warn!("Got timeout while waiting for Discord user request answer: {:?}", e);
+            let (response_request_id, lresponse) = timeout(
+                std::time::Duration::from_secs(3),
+                self.user_request_answer_receiver.lock().await.recv(),
+            )
+            .await
+            .map_err(|e| {
+                warn!(
+                    "Got timeout while waiting for Discord user request answer: {:?}",
                     e
-                })?
-                .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
+                );
+                e
+            })?
+            .unwrap_or_else(|| (request_id, Err(anyhow!("Discord thread is not available."))));
 
             if response_request_id != request_id {
                 // This shouldn't happen, but oh well.
