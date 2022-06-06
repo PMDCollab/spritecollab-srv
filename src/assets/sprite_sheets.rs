@@ -141,93 +141,107 @@ async fn get_sprite_frames(
 
     for (anim_name, (frame_size_x, frame_size_y)) in anim_dims {
         let img_path = sprite_base_path.join(format!("{}-Anim.png", anim_name));
-        let mut img = image::open(img_path)?;
+        let c_img = image::open(img_path);
         let offset_img_path = sprite_base_path.join(format!("{}-Offsets.png", anim_name));
-        let offset_img = image::open(offset_img_path)?;
+        let c_offset_img = image::open(offset_img_path);
 
-        for (base_yy, _) in (0..img.height()).step_by(frame_size_y as usize).enumerate() {
-            let base_yy = base_yy as i32;
-            // standardized to clockwise style
-            let yy = ((8 - base_yy).rem_euclid(8)) * frame_size_y;
-            for xx in (0..img.width()).step_by(frame_size_x as usize) {
-                let xx = xx as i32;
-                let tile_bounds = (xx, yy, xx + frame_size_x, yy + frame_size_y);
-                let (mut bounds_x, mut bounds_y, mut bounds_xm, mut bounds_ym) =
-                    get_covered_bounds(&img, tile_bounds);
-                let mut missing_tex = if bounds_x >= bounds_xm {
-                    (bounds_x, bounds_y, bounds_xm, bounds_ym) = (
-                        frame_size_x / 2,
-                        frame_size_y / 2,
-                        frame_size_x / 2 + 1,
-                        frame_size_y / 2 + 1,
+        if let (Ok(mut img), Ok(offset_img)) = (c_img, c_offset_img) {
+            for (base_yy, _) in (0..img.height()).step_by(frame_size_y as usize).enumerate() {
+                let base_yy = base_yy as i32;
+                // standardized to clockwise style
+                let yy = ((8 - base_yy).rem_euclid(8)) * frame_size_y;
+                for xx in (0..img.width()).step_by(frame_size_x as usize) {
+                    let xx = xx as i32;
+                    let tile_bounds = (xx, yy, xx + frame_size_x, yy + frame_size_y);
+                    let (mut bounds_x, mut bounds_y, mut bounds_xm, mut bounds_ym) =
+                        get_covered_bounds(&img, tile_bounds);
+                    let mut missing_tex = if bounds_x >= bounds_xm {
+                        (bounds_x, bounds_y, bounds_xm, bounds_ym) = (
+                            frame_size_x / 2,
+                            frame_size_y / 2,
+                            frame_size_x / 2 + 1,
+                            frame_size_y / 2 + 1,
+                        );
+                        true
+                    } else {
+                        false
+                    };
+
+                    let frame_offset = get_offset_from_rgb(
+                        &offset_img,
+                        tile_bounds,
+                        true,
+                        true,
+                        true,
+                        true,
+                        false,
+                    )?;
+
+                    let mut offsets = SpriteOffsets::default();
+                    if let Some((cx, cy)) = frame_offset[2] {
+                        offsets.center_x = cx;
+                        offsets.center_y = cy;
+                    }
+                    match frame_offset[0] {
+                        Some((x, y)) => {
+                            offsets.head_x = x;
+                            offsets.head_y = y;
+                            missing_tex = false;
+                        }
+                        None => {
+                            offsets.head_x = offsets.center_x;
+                            offsets.head_y = offsets.center_y;
+                        }
+                    }
+
+                    // no texture OR offset means this frame is missing.  do not map it.  skip.
+                    if missing_tex {
+                        continue;
+                    }
+
+                    if let Some((cx, cy)) = frame_offset[1] {
+                        offsets.lhand_x = cx;
+                        offsets.lhand_y = cy;
+                    }
+                    if let Some((cx, cy)) = frame_offset[3] {
+                        offsets.rhand_x = cx;
+                        offsets.rhand_y = cy;
+                    }
+
+                    offsets.add_loc((-bounds_x, -bounds_y));
+
+                    let (abs_bounds_x, abs_bounds_y, abs_bounds_xm, abs_bounds_ym) =
+                        add_to_bounds((bounds_x, bounds_y, bounds_xm, bounds_ym), (xx, yy));
+                    let frame_tex = img.crop(
+                        abs_bounds_x as u32,
+                        abs_bounds_y as u32,
+                        (abs_bounds_xm - abs_bounds_x) as u32,
+                        (abs_bounds_ym - abs_bounds_y) as u32,
                     );
-                    true
-                } else {
-                    false
-                };
 
-                let frame_offset =
-                    get_offset_from_rgb(&offset_img, tile_bounds, true, true, true, true, false)?;
-
-                let mut offsets = SpriteOffsets::default();
-                if let Some((cx, cy)) = frame_offset[2] {
-                    offsets.center_x = cx;
-                    offsets.center_y = cy;
-                }
-                match frame_offset[0] {
-                    Some((x, y)) => {
-                        offsets.head_x = x;
-                        offsets.head_y = y;
-                        missing_tex = false;
+                    let mut is_dupe = false;
+                    for (final_frame, final_offset) in &frames {
+                        if imgs_equal(final_frame, &frame_tex, false)
+                            && offsets_equal(
+                                final_offset,
+                                &offsets,
+                                frame_tex.width() as i32,
+                                false,
+                            )
+                        {
+                            is_dupe = true;
+                            break;
+                        }
+                        if imgs_equal(final_frame, &frame_tex, true)
+                            && offsets_equal(final_offset, &offsets, frame_tex.width() as i32, true)
+                        {
+                            is_dupe = true;
+                            break;
+                        }
                     }
-                    None => {
-                        offsets.head_x = offsets.center_x;
-                        offsets.head_y = offsets.center_y;
+                    if !is_dupe {
+                        frames.push((frame_tex, offsets));
                     }
-                }
-
-                // no texture OR offset means this frame is missing.  do not map it.  skip.
-                if missing_tex {
-                    continue;
-                }
-
-                if let Some((cx, cy)) = frame_offset[1] {
-                    offsets.lhand_x = cx;
-                    offsets.lhand_y = cy;
-                }
-                if let Some((cx, cy)) = frame_offset[3] {
-                    offsets.rhand_x = cx;
-                    offsets.rhand_y = cy;
-                }
-
-                offsets.add_loc((-bounds_x, -bounds_y));
-
-                let (abs_bounds_x, abs_bounds_y, abs_bounds_xm, abs_bounds_ym) =
-                    add_to_bounds((bounds_x, bounds_y, bounds_xm, bounds_ym), (xx, yy));
-                let frame_tex = img.crop(
-                    abs_bounds_x as u32,
-                    abs_bounds_y as u32,
-                    (abs_bounds_xm - abs_bounds_x) as u32,
-                    (abs_bounds_ym - abs_bounds_y) as u32,
-                );
-
-                let mut is_dupe = false;
-                for (final_frame, final_offset) in &frames {
-                    if imgs_equal(final_frame, &frame_tex, false)
-                        && offsets_equal(final_offset, &offsets, frame_tex.width() as i32, false)
-                    {
-                        is_dupe = true;
-                        break;
-                    }
-                    if imgs_equal(final_frame, &frame_tex, true)
-                        && offsets_equal(final_offset, &offsets, frame_tex.width() as i32, true)
-                    {
-                        is_dupe = true;
-                        break;
-                    }
-                }
-                if !is_dupe {
-                    frames.push((frame_tex, offsets));
                 }
             }
         }

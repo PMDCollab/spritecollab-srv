@@ -3,13 +3,13 @@ use crate::assets::portrait_sheets::{
 };
 use crate::assets::sprite_sheets::make_sprite_recolor_sheet;
 use crate::assets::url::{match_url, AssetType};
+use crate::assets::util::join_monster_and_form;
 use crate::cache::ScCache;
 use crate::datafiles::tracker::{FormMatch, MonsterFormCollector};
 use crate::sprite_collab::CacheBehaviour;
 use crate::{Config, SpriteCollab};
 use hyper::http::HeaderValue;
 use hyper::{Body, Method, Response, StatusCode};
-use itertools::Itertools;
 use log::warn;
 use std::fmt::Debug;
 use std::io::{Cursor, Write};
@@ -18,10 +18,12 @@ use std::sync::Arc;
 use tokio::fs;
 use zip::ZipWriter;
 
+pub mod fs_check;
 mod img_util;
 mod portrait_sheets;
 mod sprite_sheets;
 pub mod url;
+pub mod util;
 
 pub async fn match_and_process_assets_path(
     method: &Method,
@@ -32,33 +34,37 @@ pub async fn match_and_process_assets_path(
         return None;
     }
     if let Some((monster_idx, form_path, asset_type)) = match_url(path) {
-        let portrait_tile_y;
+        let portrait_tile_x;
         let portrait_size;
-        let emotions;
+        let emotions_incl_flipped;
         let tracker;
         {
             let data = sprite_collab.data();
-            portrait_tile_y = data.sprite_config.portrait_tile_x;
+            portrait_tile_x = data.sprite_config.portrait_tile_x;
             portrait_size = data.sprite_config.portrait_size;
-            emotions = data.sprite_config.emotions.clone();
+            emotions_incl_flipped = data
+                .sprite_config
+                .emotions
+                .iter()
+                .cloned()
+                .chain(
+                    data.sprite_config
+                        .emotions
+                        .iter()
+                        .map(|e| format!("{}^", e)),
+                )
+                .collect::<Vec<_>>();
             tracker = data.tracker.clone();
         }
         let collector = MonsterFormCollector::collect(&tracker, monster_idx)?;
         let (form_path, _, group) =
             collector.find_form(form_path.into_iter().map(FormMatch::Exact))?;
 
-        let mut form_joined = form_path.iter().map(|v| format!("{:04}", v)).join("/");
-        if !form_joined.is_empty() {
-            form_joined = format!("/{}", form_joined);
-        }
-        let portrait_base_path = PathBuf::from(Config::Workdir.get()).join(&format!(
-            "spritecollab/portrait/{:04}{}",
-            monster_idx, form_joined
-        ));
-        let sprite_base_path = PathBuf::from(Config::Workdir.get()).join(&format!(
-            "spritecollab/sprite/{:04}{}",
-            monster_idx, form_joined
-        ));
+        let joined_p = join_monster_and_form(monster_idx, &form_path);
+        let portrait_base_path = PathBuf::from(Config::Workdir.get())
+            .join(&format!("spritecollab/portrait/{}", joined_p));
+        let sprite_base_path =
+            PathBuf::from(Config::Workdir.get()).join(&format!("spritecollab/sprite/{}", joined_p));
 
         match asset_type {
             AssetType::PortraitSheet => Some(process_nested_result(
@@ -68,7 +74,7 @@ pub async fn match_and_process_assets_path(
                         || {
                             make_portrait_sheet(
                                 group,
-                                PortraitSheetEmotions::new(emotions, portrait_tile_y),
+                                PortraitSheetEmotions::new(emotions_incl_flipped, portrait_tile_x),
                                 &portrait_base_path,
                                 portrait_size,
                             )
@@ -85,7 +91,7 @@ pub async fn match_and_process_assets_path(
                         || {
                             make_portrait_recolor_sheet(
                                 group,
-                                PortraitSheetEmotions::new(emotions, portrait_tile_y),
+                                PortraitSheetEmotions::new(emotions_incl_flipped, portrait_tile_x),
                                 &portrait_base_path,
                                 portrait_size,
                             )

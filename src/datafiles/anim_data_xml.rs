@@ -1,5 +1,5 @@
+use crate::assets::util::join_monster_and_form;
 use crate::Config;
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -61,14 +61,9 @@ impl AnimDataXml {
         monster_idx: i32,
         path_to_form: &[i32],
     ) -> Result<Self, AnimDataXmlOpenError> {
-        let mut form_joined = path_to_form.iter().map(|v| format!("{:04}", v)).join("/");
-        if !form_joined.is_empty() {
-            form_joined = format!("/{}", form_joined);
-        }
-        let path = PathBuf::from(Config::Workdir.get()).join(&format!(
-            "spritecollab/sprite/{:04}{}/AnimData.xml",
-            monster_idx, form_joined
-        ));
+        let joined_f = join_monster_and_form(monster_idx, path_to_form);
+        let path = PathBuf::from(Config::Workdir.get())
+            .join(&format!("spritecollab/sprite/{}/AnimData.xml", joined_f));
         Self::open(&path)
     }
 

@@ -16,22 +16,22 @@ pub struct PortraitSheetEmotions {
 }
 
 impl PortraitSheetEmotions {
-    pub fn new(emotion_cfg: Vec<String>, height_sheet: i32) -> PortraitSheetEmotions {
-        let mut curent_col = 0;
-        let mut max_height = 0;
+    pub fn new(emotion_cfg: Vec<String>, width_sheet: i32) -> PortraitSheetEmotions {
+        let mut current_row = 0;
+        let mut max_width = 0;
         let mut emotion_positions = HashMap::with_capacity(emotion_cfg.len());
         for (idx, emotion) in emotion_cfg.into_iter().enumerate() {
-            let current_row = (idx as i32) % height_sheet;
-            emotion_positions.insert(emotion, (current_row, curent_col));
-            if current_row == height_sheet - 1 {
-                curent_col += 1;
+            let current_col = (idx as i32) % width_sheet;
+            emotion_positions.insert(emotion, (current_col, current_row));
+            if current_col == width_sheet - 1 {
+                current_row += 1;
             }
-            max_height = max(max_height, current_row);
+            max_width = max(max_width, current_col + 1);
         }
         Self {
             emotion_positions,
-            max_height,
-            max_width: curent_col + 1,
+            max_height: current_row,
+            max_width,
         }
     }
 }
@@ -74,12 +74,13 @@ async fn do_make_portrait_sheet(
         if emotions.emotion_positions.contains_key(grp_emotion) {
             let (x, y) = emotions.emotion_positions.get(grp_emotion).unwrap();
             let portrait_path = portrait_base_path.join(&format!("{}.png", grp_emotion));
-            let portrait_img = image::open(&portrait_path)?;
-            img.copy_from(
-                &portrait_img,
-                (x * portrait_size) as u32,
-                ((y * portrait_size) + padding_top) as u32,
-            )?;
+            if let Ok(portrait_img) = image::open(&portrait_path) {
+                img.copy_from(
+                    &portrait_img,
+                    (x * portrait_size) as u32,
+                    ((y * portrait_size) + padding_top) as u32,
+                )?;
+            }
         }
     }
     Ok(img)

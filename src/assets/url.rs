@@ -1,5 +1,5 @@
+use crate::assets::util::join_monster_and_form;
 use crate::Config;
-use itertools::Itertools;
 use route_recognizer::Router;
 
 #[derive(Clone, Debug)]
@@ -23,84 +23,67 @@ pub fn get_url(
     path_to_form: &[i32],
 ) -> String {
     let assets_srv_url = Config::GitAssetsUrl.get();
-    let mut form_joined = path_to_form.iter().map(|v| format!("{:04}", v)).join("/");
-    if !form_joined.is_empty() {
-        form_joined = format!("/{}", form_joined);
-    }
+    let joined_f = join_monster_and_form(monster_id, path_to_form);
 
     match asset_type {
         AssetType::PortraitSheet => {
-            format!(
-                "{}/assets/{:04}{}/portrait_sheet.png",
-                this_srv_url, monster_id, form_joined
-            )
+            format!("{}/assets/{}/portrait_sheet.png", this_srv_url, joined_f)
         }
         AssetType::PortraitRecolorSheet => {
             format!(
-                "{}/assets/{:04}{}/portrait_recolor_sheet.png",
-                this_srv_url, monster_id, form_joined
+                "{}/assets/{}/portrait_recolor_sheet.png",
+                this_srv_url, joined_f
             )
         }
         AssetType::Portrait(emotion) => {
             format!(
-                "{}/portrait/{:04}{}/{}.png",
+                "{}/portrait/{}/{}.png",
                 assets_srv_url,
-                monster_id,
-                form_joined,
+                joined_f,
                 up(emotion)
             )
         }
         AssetType::PortraitFlipped(emotion) => {
             format!(
-                "{}/portrait/{:04}{}/{}^.png",
+                "{}/portrait/{}/{}^.png",
                 assets_srv_url,
-                monster_id,
-                form_joined,
+                joined_f,
                 up(emotion)
             )
         }
         AssetType::SpriteAnimDataXml => {
-            format!(
-                "{}/sprite/{:04}{}/AnimData.xml",
-                assets_srv_url, monster_id, form_joined
-            )
+            format!("{}/sprite/{}/AnimData.xml", assets_srv_url, joined_f)
         }
         AssetType::SpriteZip => {
-            format!(
-                "{}/assets/{:04}{}/sprites.zip",
-                this_srv_url, monster_id, form_joined
-            )
+            format!("{}/assets/{}/sprites.zip", this_srv_url, joined_f)
         }
         AssetType::SpriteRecolorSheet => {
             format!(
-                "{}/assets/{:04}{}/sprite_recolor_sheet.png",
-                this_srv_url, monster_id, form_joined
+                "{}/assets/{}/sprite_recolor_sheet.png",
+                this_srv_url, joined_f
             )
         }
         AssetType::SpriteAnim(action) => {
             format!(
-                "{}/sprite/{:04}{}/{}-Anim.png",
+                "{}/sprite/{}/{}-Anim.png",
                 assets_srv_url,
-                monster_id,
-                form_joined,
+                joined_f,
                 up(action)
             )
         }
         AssetType::SpriteOffsets(action) => {
             format!(
-                "{}/sprite/{:04}{}/{}-Offsets.png",
+                "{}/sprite/{}/{}-Offsets.png",
                 assets_srv_url,
-                monster_id,
-                form_joined,
+                joined_f,
                 up(action)
             )
         }
         AssetType::SpriteShadows(action) => {
             format!(
-                "{}/sprite/{:04}{}/{}-Shadow.png",
+                "{}/sprite/{}/{}-Shadow.png",
                 assets_srv_url,
-                monster_id,
-                form_joined,
+                joined_f,
                 up(action)
             )
         }

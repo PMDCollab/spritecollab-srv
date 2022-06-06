@@ -10,8 +10,10 @@ It is hosted at https://spriteserver.pmdcollab.org
 To run this server yourself, configure the `.env` file. The variable names should
 be self-explanatory. 
 
-The server is running on port `31114`. It does not support HTTPS and is meant to be
+The server is running on port `3000`*. It does not support HTTPS and is meant to be
 run behind a reverse proxy. The GraphQL endpoint is at `/graphql`.
+
+*: With the Docker Compose setup in this repo, it will listen bind to host port `31114`.
 
 `discord` feature
 -----------------

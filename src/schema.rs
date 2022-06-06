@@ -1,5 +1,9 @@
 #![cfg_attr(not(feature = "discord"), allow(unused_variables))]
 
+use crate::assets::fs_check::{
+    get_existing_portrait_file, get_existing_sprite_file, iter_existing_portrait_files,
+    iter_existing_sprite_files,
+};
 use crate::assets::url::{get_url, AssetType};
 use crate::cache::ScCache;
 use crate::config::Config as SystemConfig;
@@ -26,8 +30,6 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::iter::once;
 use std::sync::Arc;
-use tokio::runtime::Handle;
-use tokio::task;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
@@ -164,11 +166,13 @@ impl MonsterBounty {
     }
 }
 
-pub struct MonsterFormPortraits<'a>(&'a Group, i32, &'a [i32]);
+// TODO: Once async works better with references in Juniper, switch back to this:
+//pub struct MonsterFormPortraits<'a>(&'a Group, i32, &'a [i32]);
+pub struct MonsterFormPortraits(Arc<Group>, i32, Vec<i32>);
 
 #[graphql_object(Context = Context)]
 #[graphql(description = "Portraits for a single monster form.")]
-impl<'a> MonsterFormPortraits<'a> {
+impl MonsterFormPortraits {
     #[graphql(description = "Whether or not this form should have portraits.")]
     fn required(&self) -> bool {
         self.0.portrait_required
@@ -221,7 +225,7 @@ impl<'a> MonsterFormPortraits<'a> {
             AssetType::PortraitSheet,
             &context.this_server_url,
             self.1,
-            self.2,
+            &self.2,
         )
     }
 
@@ -231,72 +235,98 @@ impl<'a> MonsterFormPortraits<'a> {
             AssetType::PortraitRecolorSheet,
             &context.this_server_url,
             self.1,
-            self.2,
+            &self.2,
         )
     }
 
     #[graphql(description = "A list of all existing portraits for the emotions.")]
-    fn emotions(&self, context: &Context) -> Vec<Portrait> {
-        self.0
-            .portrait_files
-            .iter()
-            .map(|(emotion, locked)| Portrait {
-                emotion: emotion.clone(),
-                locked: *locked,
-                url: get_url(
-                    AssetType::Portrait(emotion),
-                    &context.this_server_url,
-                    self.1,
-                    self.2,
-                ),
-            })
-            .collect()
+    async fn emotions(&self, context: &Context) -> FieldResult<Vec<Portrait>> {
+        Ok(
+            iter_existing_portrait_files(&context, &self.0.portrait_files, false, self.1, &self.2)
+                .await?
+                .into_iter()
+                .map(|(emotion, locked)| Portrait {
+                    emotion: emotion.clone(),
+                    locked,
+                    url: get_url(
+                        AssetType::Portrait(&emotion),
+                        &context.this_server_url,
+                        self.1,
+                        &self.2,
+                    ),
+                })
+                .collect(),
+        )
     }
 
     #[graphql(description = "A single portrait for a given emotion.")]
-    fn emotion(&self, context: &Context, emotion: String) -> Option<Portrait> {
-        self.0.portrait_files.get(&emotion).map(|locked| Portrait {
+    async fn emotion(&self, context: &Context, emotion: String) -> FieldResult<Option<Portrait>> {
+        Ok(get_existing_portrait_file(
+            &context,
+            &self.0.portrait_files,
+            &emotion,
+            true,
+            self.1,
+            &self.2,
+        )
+        .await?
+        .map(|locked| Portrait {
             emotion: emotion.clone(),
-            locked: *locked,
+            locked,
             url: get_url(
                 AssetType::Portrait(&emotion),
                 &context.this_server_url,
                 self.1,
-                self.2,
+                &self.2,
             ),
-        })
+        }))
     }
 
     #[graphql(description = "A list of all existing flipped portraits for the emotions.")]
-    fn emotions_flipped(&self, context: &Context) -> Vec<Portrait> {
-        self.0
-            .portrait_files
-            .iter()
-            .map(|(emotion, locked)| Portrait {
-                emotion: emotion.clone(),
-                locked: *locked,
-                url: get_url(
-                    AssetType::PortraitFlipped(emotion),
-                    &context.this_server_url,
-                    self.1,
-                    self.2,
-                ),
-            })
-            .collect()
+    async fn emotions_flipped(&self, context: &Context) -> FieldResult<Vec<Portrait>> {
+        Ok(
+            iter_existing_portrait_files(&context, &self.0.portrait_files, true, self.1, &self.2)
+                .await?
+                .into_iter()
+                .map(|(emotion, locked)| Portrait {
+                    emotion: emotion.clone(),
+                    locked,
+                    url: get_url(
+                        AssetType::PortraitFlipped(&emotion),
+                        &context.this_server_url,
+                        self.1,
+                        &self.2,
+                    ),
+                })
+                .collect(),
+        )
     }
 
     #[graphql(description = "A single flipped portrait for a given emotion.")]
-    fn emotion_flipped(&self, context: &Context, emotion: String) -> Option<Portrait> {
-        self.0.portrait_files.get(&emotion).map(|locked| Portrait {
+    async fn emotion_flipped(
+        &self,
+        context: &Context,
+        emotion: String,
+    ) -> FieldResult<Option<Portrait>> {
+        Ok(get_existing_portrait_file(
+            &context,
+            &self.0.portrait_files,
+            &emotion,
+            true,
+            self.1,
+            &self.2,
+        )
+        .await?
+        .map(|locked| Portrait {
             emotion: emotion.clone(),
-            locked: *locked,
+            locked,
             url: get_url(
                 AssetType::PortraitFlipped(&emotion),
                 &context.this_server_url,
                 self.1,
-                self.2,
+                &self.2,
             ),
-        })
+        }))
     }
 
     #[graphql(description = "The date and time this portrait set was last updated.")]
@@ -305,9 +335,11 @@ impl<'a> MonsterFormPortraits<'a> {
     }
 }
 
-pub struct MonsterFormSprites<'a>(&'a Group, i32, &'a [i32]);
+// TODO: Once async works better with references in Juniper, switch back to this:
+//pub struct MonsterFormSprites<'a>(&'a Group, i32, &'a [i32]);
+pub struct MonsterFormSprites(Arc<Group>, i32, Vec<i32>);
 
-impl<'a> MonsterFormSprites<'a> {
+impl MonsterFormSprites {
     fn process_sprite_action(
         &self,
         action: &str,
@@ -326,19 +358,19 @@ impl<'a> MonsterFormSprites<'a> {
                     AssetType::SpriteAnim(action),
                     this_server_url,
                     self.1,
-                    self.2,
+                    &self.2,
                 ),
                 offsets_url: get_url(
                     AssetType::SpriteOffsets(action),
                     this_server_url,
                     self.1,
-                    self.2,
+                    &self.2,
                 ),
                 shadows_url: get_url(
                     AssetType::SpriteShadows(action),
                     this_server_url,
                     self.1,
-                    self.2,
+                    &self.2,
                 ),
                 action: action.to_string(),
                 locked,
@@ -366,23 +398,18 @@ impl<'a> MonsterFormSprites<'a> {
 
     /// XXX: This isn't ideal, but Juniper is a bit silly about it's Sync requirements, so there's
     /// currently no way to do this truly async as far as I can tell.
-    fn get_action_map_blocking(&self, context: &Context) -> FieldResult<HashMap<String, String>> {
-        task::block_in_place(move || {
-            Handle::current().block_on(async move {
-                context
-                    .cached_may_fail_chain(
-                        format!("/monster_actions|{}/{:?}", self.1, self.2),
-                        || Self::fetch_xml_and_make_action_map(self.1, self.2),
-                    )
-                    .await
+    async fn get_action_map(&self, context: &Context) -> FieldResult<HashMap<String, String>> {
+        context
+            .cached_may_fail_chain(format!("/monster_actions|{}/{:?}", self.1, self.2), || {
+                Self::fetch_xml_and_make_action_map(self.1, &self.2)
             })
-        })
+            .await
     }
 }
 
 #[graphql_object(Context = Context)]
 #[graphql(description = "Sprites for a single monster form.")]
-impl<'a> MonsterFormSprites<'a> {
+impl MonsterFormSprites {
     #[graphql(description = "Whether or not this form should have sprites.")]
     fn required(&self) -> bool {
         self.0.sprite_required
@@ -438,7 +465,7 @@ impl<'a> MonsterFormSprites<'a> {
             AssetType::SpriteAnimDataXml,
             &context.this_server_url,
             self.1,
-            self.2,
+            &self.2,
         ))
     }
 
@@ -451,7 +478,7 @@ impl<'a> MonsterFormSprites<'a> {
             AssetType::SpriteZip,
             &context.this_server_url,
             self.1,
-            self.2,
+            &self.2,
         ))
     }
 
@@ -464,40 +491,50 @@ impl<'a> MonsterFormSprites<'a> {
             AssetType::SpriteRecolorSheet,
             &context.this_server_url,
             self.1,
-            self.2,
+            &self.2,
         ))
     }
 
     #[graphql(description = "A list of all existing sprites for the actions.")]
-    fn actions(&self, context: &Context) -> FieldResult<Vec<SpriteUnion>> {
+    async fn actions(&self, context: &Context) -> FieldResult<Vec<SpriteUnion>> {
         if self.0.sprite_complete == Phase::Incomplete as i64 {
             return Ok(vec![]);
         }
-        let action_copy_map = self.get_action_map_blocking(context)?;
-        Ok(self
-            .0
-            .sprite_files
-            .iter()
-            .map(|(action, locked)| {
-                self.process_sprite_action(
-                    action,
-                    *locked,
-                    &action_copy_map,
-                    &context.this_server_url,
-                )
-            })
-            .collect())
+        let action_copy_map = self.get_action_map(context).await?;
+        Ok(
+            iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
+                .await?
+                .into_iter()
+                .map(|(action, locked)| {
+                    self.process_sprite_action(
+                        &action,
+                        locked,
+                        &action_copy_map,
+                        &context.this_server_url,
+                    )
+                })
+                .collect(),
+        )
     }
 
     #[graphql(description = "A single sprite for a given action.")]
-    fn action(&self, context: &Context, action: String) -> FieldResult<Option<SpriteUnion>> {
+    async fn action(&self, context: &Context, action: String) -> FieldResult<Option<SpriteUnion>> {
         if self.0.sprite_complete == Phase::Incomplete as i64 {
             return Ok(None);
         }
-        let action_copy_map = self.get_action_map_blocking(context)?;
-        Ok(self.0.sprite_files.get(&action).map(|locked| {
-            self.process_sprite_action(&action, *locked, &action_copy_map, &context.this_server_url)
-        }))
+        let action_copy_map = self.get_action_map(context).await?;
+        Ok(
+            get_existing_sprite_file(&context, &self.0.sprite_files, &action, self.1, &self.2)
+                .await?
+                .map(|locked| {
+                    self.process_sprite_action(
+                        &action,
+                        locked,
+                        &action_copy_map,
+                        &context.this_server_url,
+                    )
+                }),
+        )
     }
 
     #[graphql(description = "The date and time this sprite set was last updated.")]
@@ -510,7 +547,7 @@ pub struct MonsterForm {
     id: i32,
     form_id: Vec<i32>,
     name_path: Vec<String>,
-    data: Group,
+    data: Arc<Group>,
 }
 
 #[graphql_object(Context = Context)]
@@ -573,12 +610,12 @@ impl MonsterForm {
 
     #[graphql(description = "Portraits for this form.")]
     fn portraits(&self) -> MonsterFormPortraits {
-        MonsterFormPortraits(&self.data, self.id, &self.form_id)
+        MonsterFormPortraits(self.data.clone(), self.id, self.form_id.clone())
     }
 
     #[graphql(description = "Sprites for this form.")]
     fn sprites(&self) -> MonsterFormSprites {
-        MonsterFormSprites(&self.data, self.id, &self.form_id)
+        MonsterFormSprites(self.data.clone(), self.id, self.form_id.clone())
     }
 }
 
@@ -624,7 +661,7 @@ impl Monster {
                     id: self.id,
                     form_id: k,
                     name_path,
-                    data: v.clone(),
+                    data: Arc::new(v.clone()),
                 })
                 .collect()),
             None => Err(FieldError::new(
@@ -658,7 +695,7 @@ impl Monster {
                     id: self.id,
                     form_id: path,
                     name_path,
-                    data: v.clone(),
+                    data: Arc::new(v.clone()),
                 })),
             None => Err(FieldError::new(
                 "Monster not found",
@@ -685,7 +722,7 @@ impl Monster {
                             id: self.id,
                             form_id: path,
                             name_path,
-                            data: v.clone(),
+                            data: Arc::new(v.clone()),
                         })),
                     None => Err(FieldError::new(
                         "Monster not found",

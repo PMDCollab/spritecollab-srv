@@ -68,3 +68,23 @@ pub trait ScCache: Send + Sync {
         T: DeserializeOwned + Serialize + Send + Sync,
         E: Send;
 }
+
+#[async_trait]
+impl<'a, B: ScCache> ScCache for &'a B {
+    type Error = B::Error;
+
+    async fn cached_may_fail<S, Fn, Ft, T, E>(
+        &self,
+        cache_key: S,
+        func: Fn,
+    ) -> Result<Result<T, E>, Self::Error>
+    where
+        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        Fn: (FnOnce() -> Ft) + Send,
+        Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
+        T: DeserializeOwned + Serialize + Send + Sync,
+        E: Send,
+    {
+        <B as ScCache>::cached_may_fail(self, cache_key, func).await
+    }
+}
