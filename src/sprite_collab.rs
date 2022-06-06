@@ -122,14 +122,15 @@ impl SpriteCollab {
         debug!("Asking Discord Bot to pre-warm user list...");
         if let Some(discord) = &self.reporting.discord_bot {
             let credit_names = self.current_data.read().unwrap().credit_names.clone();
-            juniper::futures::future::try_join_all(credit_names.iter()
-                .filter_map(|credit| {
-                    if let Ok(id) = credit.credit_id.parse() {
-                        Some(discord.pre_warm_get_user(id))
-                    } else {
-                        None
-                    }
-                })).await.ok();
+            juniper::futures::future::try_join_all(credit_names.iter().filter_map(|credit| {
+                if let Ok(id) = credit.credit_id.parse() {
+                    Some(discord.pre_warm_get_user(id))
+                } else {
+                    None
+                }
+            }))
+            .await
+            .ok();
         }
     }
 

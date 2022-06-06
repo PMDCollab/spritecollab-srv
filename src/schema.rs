@@ -17,6 +17,8 @@ use juniper::{
     graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
     GraphQLUnion,
 };
+#[allow(unused_imports)]
+use log::warn;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -24,8 +26,6 @@ use std::fmt::Debug;
 use std::future::Future;
 use std::iter::once;
 use std::sync::Arc;
-#[allow(unused_imports)]
-use log::warn;
 use tokio::runtime::Handle;
 use tokio::task;
 
