@@ -1,6 +1,7 @@
-use crate::assets::util::join_monster_and_form;
+use crate::assets::util::{force_shiny_group, join_monster_and_form};
 use crate::Config;
 use route_recognizer::Router;
+use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub enum AssetType<'a> {
@@ -23,19 +24,22 @@ pub fn get_url(
     path_to_form: &[i32],
 ) -> String {
     let assets_srv_url = Config::GitAssetsUrl.get();
-    let joined_f = join_monster_and_form(monster_id, path_to_form);
 
     match asset_type {
         AssetType::PortraitSheet => {
-            format!("{}/assets/{}/portrait_sheet.png", this_srv_url, joined_f)
+            let joined_f_dash = join_monster_and_form(monster_id, path_to_form, '-');
+            format!("{}/assets/portrait-{}.png", this_srv_url, joined_f_dash)
         }
         AssetType::PortraitRecolorSheet => {
+            let joined_f_dash =
+                join_monster_and_form(monster_id, &force_shiny_group(path_to_form), '-');
             format!(
-                "{}/assets/{}/portrait_recolor_sheet.png",
-                this_srv_url, joined_f
+                "{}/assets/portrait_recolor-{}.png",
+                this_srv_url, joined_f_dash
             )
         }
         AssetType::Portrait(emotion) => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
                 "{}/portrait/{}/{}.png",
                 assets_srv_url,
@@ -44,6 +48,7 @@ pub fn get_url(
             )
         }
         AssetType::PortraitFlipped(emotion) => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
                 "{}/portrait/{}/{}^.png",
                 assets_srv_url,
@@ -52,18 +57,23 @@ pub fn get_url(
             )
         }
         AssetType::SpriteAnimDataXml => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!("{}/sprite/{}/AnimData.xml", assets_srv_url, joined_f)
         }
         AssetType::SpriteZip => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!("{}/assets/{}/sprites.zip", this_srv_url, joined_f)
         }
         AssetType::SpriteRecolorSheet => {
+            let joined_f_dash =
+                join_monster_and_form(monster_id, &force_shiny_group(path_to_form), '-');
             format!(
-                "{}/assets/{}/sprite_recolor_sheet.png",
-                this_srv_url, joined_f
+                "{}/assets/sprite_recolor-{}.png",
+                this_srv_url, joined_f_dash
             )
         }
         AssetType::SpriteAnim(action) => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
                 "{}/sprite/{}/{}-Anim.png",
                 assets_srv_url,
@@ -72,6 +82,7 @@ pub fn get_url(
             )
         }
         AssetType::SpriteOffsets(action) => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
                 "{}/sprite/{}/{}-Offsets.png",
                 assets_srv_url,
@@ -80,6 +91,7 @@ pub fn get_url(
             )
         }
         AssetType::SpriteShadows(action) => {
+            let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
                 "{}/sprite/{}/{}-Shadow.png",
                 assets_srv_url,
@@ -91,54 +103,42 @@ pub fn get_url(
 }
 
 /// Matches a URL, if it matches returns a tuple of (monster id, form path, asset type)
-pub fn match_url(path: &str) -> Option<(i32, Vec<i32>, AssetType)> {
+pub fn match_url(path: &str) -> Option<(i32, VecDeque<i32>, AssetType)> {
     let mut router = Router::new();
 
+    // This is a bit of a hack, but we treat - as / to easily support
+    // SpriteBot-formatted file names.
+    let path = path.replace('-', "/");
+
+    router.add("/assets/portrait/*formpath.png", AssetType::PortraitSheet);
     router.add(
-        "/assets/:monsterid/*formpath/portrait_sheet.png",
-        AssetType::PortraitSheet,
-    );
-    router.add(
-        "/assets/:monsterid/*formpath/portrait_recolor_sheet.png",
+        "/assets/portrait_recolor/*formpath.png",
         AssetType::PortraitRecolorSheet,
     );
+    router.add("/assets/*formpath/sprites.zip", AssetType::SpriteZip);
     router.add(
-        "/assets/:monsterid/*formpath/sprites.zip",
-        AssetType::SpriteZip,
-    );
-    router.add(
-        "/assets/:monsterid/*formpath/sprite_recolor_sheet.png",
+        "/assets/sprite_recolor/*formpath.png",
         AssetType::SpriteRecolorSheet,
     );
+    router.add("/assets/portrait/*formpath.png", AssetType::PortraitSheet);
     router.add(
-        "/assets/:monsterid/portrait_sheet.png",
-        AssetType::PortraitSheet,
-    );
-    router.add(
-        "/assets/:monsterid/portrait_recolor_sheet.png",
+        "/assets/portrait_recolor/*formpath.png",
         AssetType::PortraitRecolorSheet,
     );
-    router.add("/assets/:monsterid/sprites.zip", AssetType::SpriteZip);
-    router.add(
-        "/assets/:monsterid/sprite_recolor_sheet.png",
-        AssetType::SpriteRecolorSheet,
-    );
+    router.add("/assets/sprites.zip", AssetType::SpriteZip);
 
-    let m = router.recognize(path).ok()?;
+    let m = router.recognize(&path).ok()?;
 
-    let monster_id = m
-        .params()
-        .find("monsterid")
-        .and_then(|x| x.parse::<i32>().ok())?;
     let form_path = m.params().find("formpath").map(|s| {
         s.split('/')
             .map(|x| x.parse::<i32>())
-            .collect::<Result<Vec<i32>, _>>()
+            .collect::<Result<VecDeque<i32>, _>>()
     });
-    let form_path = match form_path {
-        Some(Ok(x)) => x,
+
+    let (monster_id, form_path) = match form_path {
+        Some(Ok(mut x)) => (x.pop_front()?, x),
         Some(Err(_)) => return None,
-        None => vec![],
+        None => return None,
     };
     Some((monster_id, form_path, (*m.handler()).clone()))
 }

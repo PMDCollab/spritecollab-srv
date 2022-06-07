@@ -3,7 +3,7 @@ use crate::assets::portrait_sheets::{
 };
 use crate::assets::sprite_sheets::make_sprite_recolor_sheet;
 use crate::assets::url::{match_url, AssetType};
-use crate::assets::util::join_monster_and_form;
+use crate::assets::util::{force_non_shiny_group, join_monster_and_form};
 use crate::cache::ScCache;
 use crate::datafiles::tracker::{FormMatch, MonsterFormCollector};
 use crate::sprite_collab::CacheBehaviour;
@@ -57,10 +57,21 @@ pub async fn match_and_process_assets_path(
             tracker = data.tracker.clone();
         }
         let collector = MonsterFormCollector::collect(&tracker, monster_idx)?;
-        let (form_path, _, group) =
-            collector.find_form(form_path.into_iter().map(FormMatch::Exact))?;
+        let (form_path, _, group) = match asset_type {
+            AssetType::PortraitRecolorSheet => collector.find_form(
+                force_non_shiny_group(&form_path)
+                    .into_iter()
+                    .map(FormMatch::Exact),
+            )?,
+            AssetType::SpriteRecolorSheet => collector.find_form(
+                force_non_shiny_group(&form_path)
+                    .into_iter()
+                    .map(FormMatch::Exact),
+            )?,
+            _ => collector.find_form(form_path.into_iter().map(FormMatch::Exact))?,
+        };
 
-        let joined_p = join_monster_and_form(monster_idx, &form_path);
+        let joined_p = join_monster_and_form(monster_idx, &form_path, '/');
         let portrait_base_path = PathBuf::from(Config::Workdir.get())
             .join(&format!("spritecollab/portrait/{}", joined_p));
         let sprite_base_path =

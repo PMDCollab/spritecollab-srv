@@ -61,7 +61,7 @@ impl AnimDataXml {
         monster_idx: i32,
         path_to_form: &[i32],
     ) -> Result<Self, AnimDataXmlOpenError> {
-        let joined_f = join_monster_and_form(monster_idx, path_to_form);
+        let joined_f = join_monster_and_form(monster_idx, path_to_form, '/');
         let path = PathBuf::from(Config::Workdir.get())
             .join(&format!("spritecollab/sprite/{}/AnimData.xml", joined_f));
         Self::open(&path)
