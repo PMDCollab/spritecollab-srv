@@ -50,7 +50,7 @@ pub fn get_url(
         AssetType::PortraitFlipped(emotion) => {
             let joined_f = join_monster_and_form(monster_id, path_to_form, '/');
             format!(
-                "{}/portrait/{}/{}^.png",
+                "{}/portrait/{}/{}.png",
                 assets_srv_url,
                 joined_f,
                 up(emotion)
