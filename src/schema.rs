@@ -294,7 +294,7 @@ impl MonsterFormPortraits {
                     AssetType::Portrait("Normal"),
                     &context.this_server_url,
                     self.1,
-                    self.2,
+                    &self.2,
                 ),
             })
         } else {
@@ -310,7 +310,7 @@ impl MonsterFormPortraits {
                         AssetType::Portrait(emotion),
                         &context.this_server_url,
                         self.1,
-                        self.2,
+                        &self.2,
                     ),
                 })
         }
