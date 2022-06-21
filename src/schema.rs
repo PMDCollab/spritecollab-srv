@@ -282,6 +282,40 @@ impl MonsterFormPortraits {
         }))
     }
 
+    #[graphql(
+        description = "A single portrait. Return the 'Normal' portrait if avalaible, but may return another one if not present."
+    )]
+    fn preview_emotion(&self, context: &Context) -> Option<Portrait> {
+        if let Some(locked) = self.0.portrait_files.get("Normal") {
+            Some(Portrait {
+                emotion: "Normal".to_string(),
+                locked: *locked,
+                url: get_url(
+                    AssetType::Portrait("Normal"),
+                    &context.this_server_url,
+                    self.1,
+                    self.2,
+                ),
+            })
+        } else {
+            self.0
+                .portrait_files
+                .iter()
+                .sorted()
+                .next()
+                .map(|(emotion, locked)| Portrait {
+                    emotion: emotion.clone(),
+                    locked: *locked,
+                    url: get_url(
+                        AssetType::Portrait(emotion),
+                        &context.this_server_url,
+                        self.1,
+                        self.2,
+                    ),
+                })
+        }
+    }
+
     #[graphql(description = "A list of all existing flipped portraits for the emotions.")]
     async fn emotions_flipped(&self, context: &Context) -> FieldResult<Vec<Portrait>> {
         Ok(
