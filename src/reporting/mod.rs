@@ -116,6 +116,7 @@ pub enum ReportingEvent {
     Start,
     Shutdown,
     UpdateDatafiles(DatafilesReport),
+    StaleDatafiles(String),
     #[doc(hidden)]
     /// Signal for all reporting threads to shut down.
     __Shutdown,
@@ -133,6 +134,10 @@ impl ReportingEvent {
             ReportingEvent::UpdateDatafiles(DatafilesReport::Ok) => {
                 debug!("Data refresh finished.");
             }
+            ReportingEvent::StaleDatafiles(commit) => warn!(
+                "Server running with stale datafiles from commit {}.",
+                commit
+            ),
             ReportingEvent::UpdateDatafiles(de) => {
                 error!("Error updating the data files: {}", de.format_short());
             }

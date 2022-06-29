@@ -125,6 +125,16 @@ impl ReportingEvent {
                 };
                 Some((Some(title), colour, description))
             }
+            ReportingEvent::StaleDatafiles(commit) => Some((
+                Some("Could not check out newest data."),
+                Colour::RED,
+                format!(
+                    "The server was started with stale data from commit `{}`. \
+                More details on the error will be sent when the server next tries to \
+                update the data.",
+                    commit
+                ),
+            )),
             _ => None,
         }
     }

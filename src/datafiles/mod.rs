@@ -113,8 +113,8 @@ impl DatafilesReport {
     #[cfg(feature = "discord")]
     pub fn format_for_discord(&self) -> (&'static str, String) {
         let title = match self {
-            DatafilesReport::Ok => "Failed SpriteCollab Update",
-            _ => "SpriteCollab Update Recovered",
+            DatafilesReport::Ok => "SpriteCollab Update Recovered",
+            _ => "Failed SpriteCollab Update",
         };
         (
             title,

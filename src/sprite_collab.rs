@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use fred::prelude::*;
 use fred::types::RedisKey;
 use git2::build::CheckoutBuilder;
-use git2::Repository;
+use git2::{Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -82,10 +82,27 @@ impl SpriteCollab {
         let _: Option<()> = client.flushall(false).await.ok();
         info!("Connected to Redis.");
 
-        let current_data =
-            RwLock::new(refresh_data(reporting.clone()).await.unwrap_or_else(|| {
-                panic!("Error initializing data.");
-            }));
+        // First try an ordinary data update.
+        let current_data = match refresh_data(reporting.clone()).await {
+            Some(v) => RwLock::new(v),
+            None => {
+                // Try going back in time in the repo and updating.
+                error!("Failed getting the newest data. Checking out old data until data processing works.");
+                let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
+                let (value, new_commit) = loop {
+                    let new_commit = try_checkout_previous_commit(&repo_path)
+                        .expect("Failed checking out old commit.");
+                    warn!("Checked out old commit: {}", new_commit);
+                    if let Ok(value) = refresh_data_internal(reporting.clone(), false).await {
+                        break (RwLock::new(value), new_commit);
+                    }
+                };
+                reporting
+                    .send_event(ReportingEvent::StaleDatafiles(new_commit))
+                    .await;
+                value
+            }
+        };
 
         Arc::new(Self {
             state: Mutex::new(State::Ready),
@@ -195,32 +212,39 @@ impl ScCache for SpriteCollab {
 
 async fn refresh_data(reporting: Arc<Reporting>) -> Option<SpriteCollabData> {
     debug!("Refreshing data...");
-    let r = match refresh_data_internal(reporting.clone()).await {
+    let r = match refresh_data_internal(reporting.clone(), true).await {
         Ok(v) => Some(v),
         Err(e) => {
             error!("Error refreshing data: {}. Gave up.", e);
             None
         }
     };
-    reporting
-        .send_event(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok))
-        .await;
+    if r.is_some() {
+        reporting
+            .send_event(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok))
+            .await;
+    }
     r
 }
 
-async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollabData, Error> {
+async fn refresh_data_internal(
+    reporting: Arc<Reporting>,
+    update: bool,
+) -> Result<SpriteCollabData, Error> {
     let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
     if repo_path.exists() {
-        if let Err(clone_e) = try_update_repo(&repo_path) {
-            // If this fails, throw the repo away (if applicable) and clone it new.
-            warn!(
-                "Failed to update repo, deleting and cloning it again: {}",
-                clone_e
-            );
-            if let Err(e) = remove_dir_all(&repo_path).await {
-                warn!("Failed to delete repo directory: {}", e);
+        if update {
+            if let Err(clone_e) = try_update_repo(&repo_path) {
+                // If this fails, throw the repo away (if applicable) and clone it new.
+                warn!(
+                    "Failed to update repo, deleting and cloning it again: {}",
+                    clone_e
+                );
+                if let Err(e) = remove_dir_all(&repo_path).await {
+                    warn!("Failed to delete repo directory: {}", e);
+                }
+                create_repo(&repo_path, &Config::GitRepo.get())?;
             }
-            create_repo(&repo_path, &Config::GitRepo.get())?;
         }
     } else {
         create_dir_all(&repo_path).await?;
@@ -246,6 +270,18 @@ async fn refresh_data_internal(reporting: Arc<Reporting>) -> Result<SpriteCollab
     // Also try to recursively read in all AnimData.xml files, for validation.
     try_read_in_anim_data_xml(&scd.tracker, &reporting).await?;
     Ok(scd)
+}
+
+fn try_checkout_previous_commit(path: &Path) -> Result<String, Error> {
+    let repo = Repository::open(path)?;
+    let reference = repo.head()?.peel_to_commit()?.parent(0)?;
+    let name = reference.id().to_string();
+    repo.reset(
+        reference.as_object(),
+        ResetType::Hard,
+        Some(CheckoutBuilder::default().force()),
+    )?;
+    Ok(name)
 }
 
 fn try_update_repo(path: &Path) -> Result<(), Error> {
