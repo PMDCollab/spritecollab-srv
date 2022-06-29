@@ -1,7 +1,7 @@
 //! Optional (`discord` feature) Discord status reporting for the server.
 
 use anyhow::anyhow;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use log::{info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -129,9 +129,7 @@ impl ReportingEvent {
                 Some("Could not check out newest data."),
                 Colour::RED,
                 format!(
-                    "The server was started with stale data from commit `{}`. \
-                More details on the error will be sent when the server next tries to \
-                update the data.",
+                    "The server was started with stale data from commit `{}`.",
                     commit
                 ),
             )),
@@ -480,7 +478,10 @@ impl DiscordBot {
         ));
         data.insert::<ReadySender>(ready_sender);
         data.insert::<ShardManagerShared>(client.shard_manager.clone());
-        data.insert::<DatafilesFailedLastTypeAndTime>((None, Utc::now()));
+        data.insert::<DatafilesFailedLastTypeAndTime>((
+            None,
+            DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+        ));
         drop(data);
 
         let handle = thread::spawn(move || {
