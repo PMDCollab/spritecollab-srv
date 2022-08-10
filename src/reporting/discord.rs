@@ -24,6 +24,8 @@ use serenity::utils::Colour;
 use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::MutexGuard;
+use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
@@ -206,64 +208,66 @@ impl EventHandler for Handler {
         loop {
             let mut data = ctx.data.write().await;
             let recv = data.get_mut::<ReportReceiver>().unwrap();
-            let event = recv.recv().await;
+            let event_result = timeout(Duration::minutes(1).into(), recv.recv()).await;
             let (ur_recv, ur_send) = data.get_mut::<UserRequestResponder>().unwrap();
             let ur_recv = ur_recv.clone();
             let ur_send = ur_send.clone();
             drop(data);
             Self::process_user_requests(ur_recv, ur_send, &mut ctx).await;
-            match event {
-                None => {
-                    let mut data = ctx.data.write().await;
-                    let manager = data.get_mut::<ShardManagerShared>().unwrap();
-                    manager.lock().await.shutdown_all().await;
-                    return;
-                }
-                Some(ReportingEvent::__Wakeup) => { /* continue */ }
-                Some(ReportingEvent::__Shutdown) => {
-                    let mut data = ctx.data.write().await;
-                    let manager = data.get_mut::<ShardManagerShared>().unwrap();
-                    manager.lock().await.shutdown_all().await;
-                    return;
-                }
-                Some(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok)) => {
-                    // only report if there was a previous failure
-                    let mut data = ctx.data.write().await;
-                    let (last_evt, _last_time) =
-                        data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
-                    if last_evt.is_some() {
-                        self.report(
-                            ReportingEvent::UpdateDatafiles(DatafilesReport::Ok),
-                            &ctx,
-                            &mut channels,
-                        )
-                        .await;
-                        *last_evt = None;
+            if let Ok(event) = event_result {
+                match event {
+                    None => {
+                        let mut data = ctx.data.write().await;
+                        let manager = data.get_mut::<ShardManagerShared>().unwrap();
+                        manager.lock().await.shutdown_all().await;
+                        return;
                     }
-                }
-                Some(ReportingEvent::UpdateDatafiles(event)) => {
-                    // only report if != previous failure within the last
-                    // REPORT_DATAFILES_COOLDOWN_H hours.
-                    let mut data = ctx.data.write().await;
-                    let (last_evt, last_time) =
-                        data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
-                    if last_evt.is_none()
-                        || discriminant(last_evt.as_ref().unwrap()) == discriminant(&event)
-                    {
-                        let now = Utc::now();
-                        if &(now - Duration::hours(REPORT_DATAFILES_COOLDOWN_H)) >= last_time {
+                    Some(ReportingEvent::__Wakeup) => { /* continue */ }
+                    Some(ReportingEvent::__Shutdown) => {
+                        let mut data = ctx.data.write().await;
+                        let manager = data.get_mut::<ShardManagerShared>().unwrap();
+                        manager.lock().await.shutdown_all().await;
+                        return;
+                    }
+                    Some(ReportingEvent::UpdateDatafiles(DatafilesReport::Ok)) => {
+                        // only report if there was a previous failure
+                        let mut data = ctx.data.write().await;
+                        let (last_evt, _last_time) =
+                            data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
+                        if last_evt.is_some() {
                             self.report(
-                                ReportingEvent::UpdateDatafiles(event.clone()),
+                                ReportingEvent::UpdateDatafiles(DatafilesReport::Ok),
                                 &ctx,
                                 &mut channels,
                             )
-                            .await
+                            .await;
+                            *last_evt = None;
                         }
-                        *last_time = now;
-                        *last_evt = Some(event);
                     }
+                    Some(ReportingEvent::UpdateDatafiles(event)) => {
+                        // only report if != previous failure within the last
+                        // REPORT_DATAFILES_COOLDOWN_H hours.
+                        let mut data = ctx.data.write().await;
+                        let (last_evt, last_time) =
+                            data.get_mut::<DatafilesFailedLastTypeAndTime>().unwrap();
+                        if last_evt.is_none()
+                            || discriminant(last_evt.as_ref().unwrap()) == discriminant(&event)
+                        {
+                            let now = Utc::now();
+                            if &(now - Duration::hours(REPORT_DATAFILES_COOLDOWN_H)) >= last_time {
+                                self.report(
+                                    ReportingEvent::UpdateDatafiles(event.clone()),
+                                    &ctx,
+                                    &mut channels,
+                                )
+                                .await
+                            }
+                            *last_time = now;
+                            *last_evt = Some(event);
+                        }
+                    }
+                    Some(event) => self.report(event, &ctx, &mut channels).await,
                 }
-                Some(event) => self.report(event, &ctx, &mut channels).await,
             }
         }
     }
@@ -306,26 +310,36 @@ impl Handler {
         context: &mut Context,
     ) {
         trace!("UserReq[?]D - Checking...",);
-        while let Ok(user_id) = recv.lock().await.try_recv() {
-            trace!("UserReq[{}]D - Processing...", user_id);
-            // Try cache first
-            if let Some(user) = context.cache.user(user_id) {
-                send.send((user_id, Ok(Some(user.into())))).await.ok();
-            } else {
-                let user_res = context.http.get_user(user_id).await;
-                send.send((
-                    user_id,
-                    user_res
-                        .map(DiscordProfile::from)
-                        .map(Some)
-                        .map_err(anyhow::Error::from)
-                        .map_err(Arc::new)
-                        .map_err(ArcedAnyhowError),
-                ))
-                .await
-                .ok();
+        loop {
+            match timeout(std::time::Duration::from_secs(360), recv.lock()).await {
+                Ok(mut recv_lock) => {
+                    match recv_lock.try_recv() {
+                        Ok(user_id) => {
+                            trace!("UserReq[{}]D - Processing...", user_id);
+                            // Try cache first
+                            if let Some(user) = context.cache.user(user_id) {
+                                send.send((user_id, Ok(Some(user.into())))).await.ok();
+                            } else {
+                                let user_res = context.http.get_user(user_id).await;
+                                send.send((
+                                    user_id,
+                                    user_res
+                                        .map(DiscordProfile::from)
+                                        .map(Some)
+                                        .map_err(anyhow::Error::from)
+                                        .map_err(Arc::new)
+                                        .map_err(ArcedAnyhowError),
+                                ))
+                                    .await
+                                    .ok();
+                            }
+                            trace!("UserReq[{}]D - Done!", user_id);
+                        }
+                        Err(_) => break
+                    }
+                }
+                Err(e) => warn!("BUG: Reciever lock could not be acquired in discord::Handler::process_user_requests!"),
             }
-            trace!("UserReq[{}]D - Done!", user_id);
         }
     }
 }

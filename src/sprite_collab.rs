@@ -19,8 +19,10 @@ use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::time::Duration;
 use tokio::fs::{create_dir_all, remove_dir_all};
 use tokio::sync::Mutex;
+use tokio::time::timeout;
 
 const GIT_REPO_DIR: &str = "spritecollab";
 
@@ -114,23 +116,28 @@ impl SpriteCollab {
 
     /// Refreshes the data. Does nothing if already refreshing.
     pub async fn refresh(slf: Arc<Self>) {
-        if slf.state.lock().await.deref() == &State::Refreshing {
-            return;
-        }
-        if let Some(new_data) = refresh_data(slf.reporting.clone()).await {
-            let mut lock_state = slf.state.lock().await;
-            let changed;
-            {
-                let mut lock_data = slf.current_data.write().unwrap();
-                changed = lock_data.deref() == &new_data;
-                *lock_data = new_data;
-                *lock_state = State::Ready;
+        let state_lock_result = timeout(Duration::from_secs(360), slf.state.lock()).await;
+        match state_lock_result {
+            Ok(mut state_lock) => {
+                if state_lock.deref() == &State::Refreshing {
+                    return;
+                }
+                if let Some(new_data) = refresh_data(slf.reporting.clone()).await {
+                    let changed;
+                    {
+                        let mut lock_data = slf.current_data.write().unwrap();
+                        changed = lock_data.deref() == &new_data;
+                        *lock_data = new_data;
+                        *state_lock = State::Ready;
+                    }
+                    if changed {
+                        let _: Option<()> = slf.redis.flushall(false).await.ok();
+                        #[cfg(feature = "discord")]
+                        slf.pre_warm_discord().await;
+                    }
+                }
             }
-            if changed {
-                let _: Option<()> = slf.redis.flushall(false).await.ok();
-                #[cfg(feature = "discord")]
-                slf.pre_warm_discord().await;
-            }
+            Err(_) => warn!("BUG: State lock could not be acquired in SpriteCollab::refresh!"),
         }
     }
 
