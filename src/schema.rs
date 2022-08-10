@@ -33,6 +33,7 @@ use std::sync::Arc;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
+const API_VERSION: &str = "1.2";
 
 #[repr(i64)]
 #[derive(GraphQLEnum)]
@@ -981,6 +982,73 @@ impl ScCache for Context {
     }
 }
 
+pub struct Meta;
+
+#[graphql_object(Context = Context)]
+impl Meta {
+    #[graphql(description = "Version of this API.")]
+    fn api_version(_context: &Context) -> &str {
+        API_VERSION
+    }
+
+    #[graphql(description = "Version of spritecollab-srv serving this API.")]
+    fn server_version(_context: &Context) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
+
+    #[graphql(
+        description = "Git Commit (https://github.com/PMDCollab/SpriteCollab/) currently checked out to serve the assets."
+    )]
+    async fn assets_commit(context: &Context) -> FieldResult<String> {
+        context
+            .collab
+            .with_meta(|meta| {
+                meta.map_err(|_| {
+                    FieldError::new(
+                        "Internal error while trying to load meta data.",
+                        graphql_value!(None),
+                    )
+                })
+                .map(|v| v.assets_commit.clone())
+            })
+            .await
+    }
+
+    #[graphql(
+        description = "Date of the last commit in the assets repository (https://github.com/PMDCollab/SpriteCollab) that is currently checked out."
+    )]
+    async fn assets_update_date(context: &Context) -> FieldResult<DateTime<Utc>> {
+        context
+            .collab
+            .with_meta(|meta| {
+                meta.map_err(|_| {
+                    FieldError::new(
+                        "Internal error while trying to load meta data.",
+                        graphql_value!(None),
+                    )
+                })
+                .map(|v| v.assets_update_date)
+            })
+            .await
+    }
+
+    #[graphql(description = "Date that the server last checked for updates.")]
+    async fn update_checked_date(context: &Context) -> FieldResult<DateTime<Utc>> {
+        context
+            .collab
+            .with_meta(|meta| {
+                meta.map_err(|_| {
+                    FieldError::new(
+                        "Internal error while trying to load meta data.",
+                        graphql_value!(None),
+                    )
+                })
+                .map(|v| v.update_checked_date)
+            })
+            .await
+    }
+}
+
 // To make our context usable by Juniper, we have to implement a marker trait.
 impl juniper::Context for Context {}
 
@@ -988,9 +1056,17 @@ pub struct Query;
 
 #[graphql_object(Context = Context)]
 impl Query {
-    #[graphql(description = "Version of this API.")]
+    #[graphql(
+        description = "Version of this API.",
+        deprecated = "Use `meta` instead."
+    )]
     fn api_version(_context: &Context) -> &str {
-        "1.1"
+        API_VERSION
+    }
+
+    #[graphql(description = "Meta information about the server and state of the assets.")]
+    fn meta(_context: &Context) -> Meta {
+        Meta
     }
 
     #[graphql(

@@ -24,8 +24,6 @@ use serenity::utils::Colour;
 use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tokio::sync::MutexGuard;
-use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 
 #[derive(Debug, Clone)]
@@ -208,7 +206,7 @@ impl EventHandler for Handler {
         loop {
             let mut data = ctx.data.write().await;
             let recv = data.get_mut::<ReportReceiver>().unwrap();
-            let event_result = timeout(Duration::minutes(1).into(), recv.recv()).await;
+            let event_result = timeout(std::time::Duration::from_secs(60), recv.recv()).await;
             let (ur_recv, ur_send) = data.get_mut::<UserRequestResponder>().unwrap();
             let ur_recv = ur_recv.clone();
             let ur_send = ur_send.clone();
@@ -338,7 +336,7 @@ impl Handler {
                         Err(_) => break
                     }
                 }
-                Err(e) => warn!("BUG: Reciever lock could not be acquired in discord::Handler::process_user_requests!"),
+                Err(_) => warn!("BUG: Reciever lock could not be acquired in discord::Handler::process_user_requests!"),
             }
         }
     }

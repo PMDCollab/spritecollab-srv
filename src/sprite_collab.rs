@@ -8,6 +8,7 @@ use crate::reporting::Reporting;
 use crate::{Config, ReportingEvent};
 use anyhow::{anyhow, Error};
 use async_trait::async_trait;
+use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use fred::prelude::*;
 use fred::types::RedisKey;
 use git2::build::CheckoutBuilder;
@@ -15,6 +16,7 @@ use git2::{Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use std::cell::{BorrowError, Ref, RefCell};
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -60,8 +62,26 @@ impl SpriteCollabData {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Meta {
+    pub assets_commit: String,
+    pub assets_update_date: DateTime<Utc>,
+    pub update_checked_date: DateTime<Utc>,
+}
+
+impl Meta {
+    fn new() -> Self {
+        Self {
+            assets_commit: "".to_string(),
+            assets_update_date: Utc::now(),
+            update_checked_date: Utc::now(),
+        }
+    }
+}
+
 pub struct SpriteCollab {
     state: Mutex<State>,
+    meta: Mutex<RefCell<Meta>>,
     current_data: RwLock<SpriteCollabData>,
     reporting: Arc<Reporting>,
     redis: RedisClient,
@@ -84,8 +104,10 @@ impl SpriteCollab {
         let _: Option<()> = client.flushall(false).await.ok();
         info!("Connected to Redis.");
 
+        let meta = Mutex::new(RefCell::new(Meta::new()));
+
         // First try an ordinary data update.
-        let current_data = match refresh_data(reporting.clone()).await {
+        let current_data = match refresh_data(reporting.clone(), &meta).await {
             Some(v) => RwLock::new(v),
             None => {
                 // Try going back in time in the repo and updating.
@@ -95,7 +117,8 @@ impl SpriteCollab {
                     let new_commit = try_checkout_previous_commit(&repo_path)
                         .expect("Failed checking out old commit.");
                     warn!("Checked out old commit: {}", new_commit);
-                    if let Ok(value) = refresh_data_internal(reporting.clone(), false).await {
+                    if let Ok(value) = refresh_data_internal(reporting.clone(), &meta, false).await
+                    {
                         break (RwLock::new(value), new_commit);
                     }
                 };
@@ -111,6 +134,7 @@ impl SpriteCollab {
             current_data,
             reporting,
             redis: client,
+            meta,
         })
     }
 
@@ -122,7 +146,7 @@ impl SpriteCollab {
                 if state_lock.deref() == &State::Refreshing {
                     return;
                 }
-                if let Some(new_data) = refresh_data(slf.reporting.clone()).await {
+                if let Some(new_data) = refresh_data(slf.reporting.clone(), &slf.meta).await {
                     let changed;
                     {
                         let mut lock_data = slf.current_data.write().unwrap();
@@ -160,6 +184,13 @@ impl SpriteCollab {
 
     pub fn data(&self) -> RwLockReadGuard<'_, SpriteCollabData> {
         self.current_data.read().unwrap()
+    }
+
+    pub async fn with_meta<F: FnOnce(Result<Ref<'_, Meta>, BorrowError>) -> R, R>(
+        &self,
+        cb: F,
+    ) -> R {
+        cb(self.meta.lock().await.deref().try_borrow())
     }
 }
 
@@ -217,9 +248,12 @@ impl ScCache for SpriteCollab {
     }
 }
 
-async fn refresh_data(reporting: Arc<Reporting>) -> Option<SpriteCollabData> {
+async fn refresh_data(
+    reporting: Arc<Reporting>,
+    meta: &Mutex<RefCell<Meta>>,
+) -> Option<SpriteCollabData> {
     debug!("Refreshing data...");
-    let r = match refresh_data_internal(reporting.clone(), true).await {
+    let r = match refresh_data_internal(reporting.clone(), meta, true).await {
         Ok(v) => Some(v),
         Err(e) => {
             error!("Error refreshing data: {}. Gave up.", e);
@@ -236,26 +270,31 @@ async fn refresh_data(reporting: Arc<Reporting>) -> Option<SpriteCollabData> {
 
 async fn refresh_data_internal(
     reporting: Arc<Reporting>,
+    meta: &Mutex<RefCell<Meta>>,
     update: bool,
 ) -> Result<SpriteCollabData, Error> {
     let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
+    let mut repo = None;
     if repo_path.exists() {
         if update {
-            if let Err(clone_e) = try_update_repo(&repo_path) {
-                // If this fails, throw the repo away (if applicable) and clone it new.
-                warn!(
-                    "Failed to update repo, deleting and cloning it again: {}",
-                    clone_e
-                );
-                if let Err(e) = remove_dir_all(&repo_path).await {
-                    warn!("Failed to delete repo directory: {}", e);
+            match try_update_repo(&repo_path) {
+                Ok(v) => repo = Some(v),
+                Err(clone_e) => {
+                    // If this fails, throw the repo away (if applicable) and clone it new.
+                    warn!(
+                        "Failed to update repo, deleting and cloning it again: {}",
+                        clone_e
+                    );
+                    if let Err(e) = remove_dir_all(&repo_path).await {
+                        warn!("Failed to delete repo directory: {}", e);
+                    }
+                    repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
                 }
-                create_repo(&repo_path, &Config::GitRepo.get())?;
             }
         }
     } else {
         create_dir_all(&repo_path).await?;
-        create_repo(&repo_path, &Config::GitRepo.get())?;
+        repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
     }
 
     let scd = SpriteCollabData::new(
@@ -276,6 +315,25 @@ async fn refresh_data_internal(
 
     // Also try to recursively read in all AnimData.xml files, for validation.
     try_read_in_anim_data_xml(&scd.tracker, &reporting).await?;
+
+    // Update metadata
+    let meta_acq = meta.lock().await;
+    let mut meta_brw = meta_acq.try_borrow_mut()?;
+    let commit = repo.as_ref().unwrap().head()?.peel_to_commit()?;
+    let commit_time_raw = commit.time();
+    let commit_time = FixedOffset::east(commit_time_raw.offset_minutes() * 60)
+        .from_local_datetime(
+            &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
+                .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,
+        )
+        .unwrap();
+
+    *meta_brw = Meta {
+        assets_commit: commit.id().to_string(),
+        assets_update_date: Utc.from_utc_datetime(&commit_time.naive_utc()),
+        update_checked_date: Utc::now(),
+    };
+
     Ok(scd)
 }
 
@@ -291,7 +349,7 @@ fn try_checkout_previous_commit(path: &Path) -> Result<String, Error> {
     Ok(name)
 }
 
-fn try_update_repo(path: &Path) -> Result<(), Error> {
+fn try_update_repo(path: &Path) -> Result<Repository, Error> {
     if !path.join(".git").exists() {
         return Err(anyhow!("Missing .git directory"));
     }
@@ -301,12 +359,12 @@ fn try_update_repo(path: &Path) -> Result<(), Error> {
     let reference = repo.find_reference("FETCH_HEAD")?;
     repo.set_head(reference.name().unwrap())?;
     repo.checkout_head(Some(CheckoutBuilder::default().force()))?;
-    Ok(())
+    Ok(Repository::open(path)?) // libgit2's borrowing code is a bit dumb
 }
 
-fn create_repo(path: &Path, clone_url: &str) -> Result<(), Error> {
+fn create_repo(path: &Path, clone_url: &str) -> Result<Repository, Error> {
     info!("Cloning SpriteCollab repo...");
-    Repository::clone(clone_url, path)?;
+    let repo = Repository::clone(clone_url, path)?;
     info!("Cloning SpriteCollab repo. Done!");
-    Ok(())
+    Ok(repo)
 }
