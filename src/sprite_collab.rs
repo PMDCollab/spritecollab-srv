@@ -273,8 +273,25 @@ async fn refresh_data_internal(
     meta: &Mutex<RefCell<Meta>>,
     update: bool,
 ) -> Result<SpriteCollabData, Error> {
+    match refresh_data_internal_do(reporting, meta, update).await {
+        Ok(v) => Ok(v),
+        Err(e) => {
+            // Update at least the scan time
+            let meta_acq = meta.lock().await;
+            let mut meta_brw = meta_acq.try_borrow_mut()?;
+            meta_brw.update_checked_date = Utc::now();
+            Err(e)
+        }
+    }
+}
+
+async fn refresh_data_internal_do(
+    reporting: Arc<Reporting>,
+    meta: &Mutex<RefCell<Meta>>,
+    update: bool,
+) -> Result<SpriteCollabData, Error> {
     let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
-    let mut repo = None;
+    let repo;
     if repo_path.exists() {
         if update {
             match try_update_repo(&repo_path) {
@@ -291,6 +308,11 @@ async fn refresh_data_internal(
                     repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
                 }
             }
+        } else {
+            if !repo_path.join(".git").exists() {
+                return Err(anyhow!("Missing .git directory"));
+            }
+            repo = Some(Repository::open(&repo_path)?);
         }
     } else {
         create_dir_all(&repo_path).await?;
