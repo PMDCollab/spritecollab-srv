@@ -756,6 +756,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "gethostname"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1ebd34e35c46e00bb73e81363248d627782724609fe1b6396f553f68fe3862e"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2068,7 +2078,7 @@ dependencies = [
 
 [[package]]
 name = "spritecollab-srv"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2079,6 +2089,7 @@ dependencies = [
  "ellipse",
  "fred",
  "fuzzy-matcher",
+ "gethostname",
  "git2",
  "hyper",
  "image",

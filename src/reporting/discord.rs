@@ -14,6 +14,7 @@ use std::thread::JoinHandle;
 use crate::datafiles::DatafilesReport;
 use crate::reporting::ReportingEvent;
 use crate::Config;
+use gethostname::gethostname;
 use serenity::client::bridge::gateway::ShardManager;
 use serenity::client::ClientBuilder;
 use serenity::http::CacheHttp;
@@ -284,7 +285,11 @@ impl Handler {
                             embed.color(color);
                             embed.description(&description);
                             embed.footer(|footer| {
-                                footer.text(Config::Address.get());
+                                footer.text(format!(
+                                    "{} | {}",
+                                    gethostname().to_string_lossy(),
+                                    Config::Address.get()
+                                ));
                                 footer
                             });
                             embed
