@@ -12,11 +12,12 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use fred::prelude::*;
 use fred::types::RedisKey;
 use git2::build::CheckoutBuilder;
-use git2::{Repository, ResetType};
+use git2::{Oid, Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cell::{BorrowError, Ref, RefCell};
+use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -75,6 +76,35 @@ impl Meta {
             assets_commit: "".to_string(),
             assets_update_date: Utc::now(),
             update_checked_date: Utc::now(),
+        }
+    }
+}
+
+pub struct RepositoryUpdate {
+    repo: Repository,
+    changelist: Vec<Oid>,
+}
+
+unsafe impl Sync for RepositoryUpdate {}
+
+impl Debug for RepositoryUpdate {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RepositoryUpdate")
+            .field("<repo at>", &self.repo.path())
+            .field("changelist", &self.changelist)
+            .finish()
+    }
+}
+
+impl RepositoryUpdate {
+    fn new(repo: Repository, changelist: Vec<Oid>) -> Self {
+        Self { repo, changelist }
+    }
+
+    fn new_no_changes(repo: Repository) -> Self {
+        Self {
+            repo,
+            changelist: vec![],
         }
     }
 }
@@ -291,11 +321,11 @@ async fn refresh_data_internal_do(
     update: bool,
 ) -> Result<SpriteCollabData, Error> {
     let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
-    let repo;
+    let repo_update;
     if repo_path.exists() {
         if update {
             match try_update_repo(&repo_path) {
-                Ok(v) => repo = Some(v),
+                Ok(v) => repo_update = Some(v),
                 Err(clone_e) => {
                     // If this fails, throw the repo away (if applicable) and clone it new.
                     warn!(
@@ -305,19 +335,46 @@ async fn refresh_data_internal_do(
                     if let Err(e) = remove_dir_all(&repo_path).await {
                         warn!("Failed to delete repo directory: {}", e);
                     }
-                    repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
+                    repo_update = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
                 }
             }
         } else {
             if !repo_path.join(".git").exists() {
                 return Err(anyhow!("Missing .git directory"));
             }
-            repo = Some(Repository::open(&repo_path)?);
+            repo_update = Some(RepositoryUpdate::new_no_changes(Repository::open(
+                &repo_path,
+            )?));
         }
     } else {
         create_dir_all(&repo_path).await?;
-        repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
+        repo_update = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
     }
+
+    let repo_update =
+        repo_update.ok_or_else(|| anyhow!("Internal Error: Repository was None during update."))?;
+
+    if let Some(last) = repo_update.changelist.last() {
+        info!(
+            "Trying updating repo to commit {} ({} new commits)...",
+            last,
+            repo_update.changelist.len()
+        )
+    }
+
+    let commit = repo_update.repo.head()?.peel_to_commit()?;
+    let commit_id = commit.id();
+    let commit_time_raw = commit.time();
+    let commit_time = FixedOffset::east(commit_time_raw.offset_minutes() * 60)
+        .from_local_datetime(
+            &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
+                .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,
+        )
+        .unwrap();
+    drop(commit);
+
+    #[cfg(feature = "activity")]
+    reporting.update_activity(repo_update).await?;
 
     let scd = SpriteCollabData::new(
         read_and_report_error(
@@ -352,7 +409,7 @@ async fn refresh_data_internal_do(
         .unwrap();
 
     *meta_brw = Meta {
-        assets_commit: commit.id().to_string(),
+        assets_commit: commit_id.to_string(),
         assets_update_date: Utc.from_utc_datetime(&commit_time.naive_utc()),
         update_checked_date: Utc::now(),
     };
@@ -372,7 +429,7 @@ fn try_checkout_previous_commit(path: &Path) -> Result<String, Error> {
     Ok(name)
 }
 
-fn try_update_repo(path: &Path) -> Result<Repository, Error> {
+fn try_update_repo(path: &Path) -> Result<RepositoryUpdate, Error> {
     if !path.join(".git").exists() {
         return Err(anyhow!("Missing .git directory"));
     }
@@ -380,14 +437,24 @@ fn try_update_repo(path: &Path) -> Result<Repository, Error> {
     let mut remote = repo.find_remote("origin")?;
     remote.fetch(&["master"], None, None)?;
     let reference = repo.find_reference("FETCH_HEAD")?;
+    let old_reference = repo.head()?.peel_to_commit()?.id();
     repo.set_head(reference.name().unwrap())?;
     repo.checkout_head(Some(CheckoutBuilder::default().force()))?;
-    Ok(Repository::open(path)?) // libgit2's borrowing code is a bit dumb
+
+    let mut walk = repo.revwalk()?;
+    walk.push_head()?;
+    walk.hide(old_reference)?;
+    let changes = walk.collect::<Result<Vec<Oid>, _>>()?;
+
+    Ok(RepositoryUpdate::new(Repository::open(path)?, changes)) // libgit2's borrowing code is a bit dumb
 }
 
-fn create_repo(path: &Path, clone_url: &str) -> Result<Repository, Error> {
+fn create_repo(path: &Path, clone_url: &str) -> Result<RepositoryUpdate, Error> {
     info!("Cloning SpriteCollab repo...");
     let repo = Repository::clone(clone_url, path)?;
     info!("Cloning SpriteCollab repo. Done!");
-    Ok(repo)
+    let mut walk = repo.revwalk()?;
+    walk.push_head()?;
+    let changes = walk.collect::<Result<Vec<Oid>, _>>()?;
+    Ok(RepositoryUpdate::new(repo, changes))
 }

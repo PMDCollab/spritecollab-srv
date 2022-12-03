@@ -1,28 +1,36 @@
 use crate::datafiles::DatafilesReport;
 use log::*;
 use std::sync::Arc;
-#[cfg(feature = "discord")]
+#[cfg(any(feature = "discord", feature = "activity"))]
 use std::thread::JoinHandle;
 
 #[cfg(feature = "discord")]
 mod discord;
 
+#[cfg(feature = "activity")]
+mod activity;
+
 #[cfg(feature = "discord")]
 pub use self::discord::DiscordBot;
 #[cfg(feature = "discord")]
 use crate::reporting::discord::DiscordSetupError;
+#[cfg(feature = "activity")]
+use crate::sprite_collab::RepositoryUpdate;
 
 /// A wrapper around one or multiple thread/async join handles and/or
 /// awaited futures that are used for reporting.
 pub struct ReportingJoinHandle {
     #[cfg(feature = "discord")]
     discord_join_handle: Option<JoinHandle<serenity::Result<()>>>,
+    #[cfg(feature = "activity")]
+    activity_join_handle: JoinHandle<Result<(), anyhow::Error>>,
 }
 
 impl ReportingJoinHandle {
     pub fn join(self) {
         #[cfg(feature = "discord")]
         if let Some(discord_join_handle) = self.discord_join_handle {
+            debug!("Joining Discord thread...");
             match discord_join_handle.join() {
                 Ok(Ok(())) => {}
                 Ok(Err(err)) => {
@@ -42,12 +50,39 @@ impl ReportingJoinHandle {
                 }
             }
         }
+        #[cfg(feature = "activity")]
+        {
+            debug!("Joining Activity thread...");
+            match self.activity_join_handle.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {
+                    error!("The Activity thread exited: {:?}", err);
+                    panic!("Activity thread failed.");
+                }
+                Err(err) => {
+                    match err.downcast_ref::<String>() {
+                        Some(as_string) => {
+                            error!(
+                                "The Activity main thread could not be joined: {}",
+                                as_string
+                            );
+                        }
+                        None => {
+                            error!("The Activity main thread could not be joined: {:?}", err);
+                        }
+                    }
+                    panic!("Activity thread failed.");
+                }
+            }
+        }
     }
 }
 
 pub struct Reporting {
     #[cfg(feature = "discord")]
     pub(crate) discord_bot: Option<Arc<DiscordBot>>,
+    #[cfg(feature = "activity")]
+    pub(crate) activity: Arc<activity::Activity>,
 }
 
 impl Reporting {
@@ -59,54 +94,65 @@ impl Reporting {
         }
     }
 
+    #[cfg(feature = "activity")]
+    pub async fn update_activity(
+        &self,
+        repo_update: RepositoryUpdate,
+    ) -> Result<(), anyhow::Error> {
+        self.activity.update(repo_update).await
+    }
+
     pub async fn shutdown(&self) {
         #[cfg(feature = "discord")]
         if let Some(discord_bot) = &self.discord_bot {
             discord_bot.shutdown().await;
         }
+        #[cfg(feature = "activity")]
+        self.activity.close().await;
     }
 }
 
 pub async fn init_reporting() -> (Arc<Reporting>, ReportingJoinHandle) {
     #[cfg(feature = "discord")]
-    {
-        match discord::discord_main().await {
-            Ok((app, join_handle)) => (
-                Arc::new(Reporting {
-                    discord_bot: Some(Arc::new(app)),
-                }),
-                ReportingJoinHandle {
-                    discord_join_handle: Some(join_handle),
-                },
-            ),
-            Err(DiscordSetupError::NoTokenProvided) => {
-                warn!("Discord was not set up, since no bot token was provided.");
-                (
-                    Arc::new(Reporting { discord_bot: None }),
-                    ReportingJoinHandle {
-                        discord_join_handle: None,
-                    },
-                )
-            }
-            Err(DiscordSetupError::NoChannelsProvided) => {
-                warn!("Discord was not set up, since no channel was provided.");
-                (
-                    Arc::new(Reporting { discord_bot: None }),
-                    ReportingJoinHandle {
-                        discord_join_handle: None,
-                    },
-                )
-            }
-            Err(err) => {
-                error!("Failed setting up Discord: {:?}", err);
-                panic!("Failed setting up Discord.");
-            }
+    let (discord_bot, discord_join_handle) = match discord::discord_main().await {
+        Ok((app, join_handle)) => (Some(Arc::new(app)), Some(join_handle)),
+        Err(DiscordSetupError::NoTokenProvided) => {
+            warn!("Discord was not set up, since no bot token was provided.");
+            (None, None)
         }
-    }
-    #[cfg(not(feature = "discord"))]
-    {
-        (Arc::new(Reporting {}), ReportingJoinHandle {})
-    }
+        Err(DiscordSetupError::NoChannelsProvided) => {
+            warn!("Discord was not set up, since no channel was provided.");
+            (None, None)
+        }
+        Err(err) => {
+            error!("Failed setting up Discord: {:?}", err);
+            panic!("Failed setting up Discord.");
+        }
+    };
+
+    #[cfg(feature = "activity")]
+    let (activity, activity_join_handle) = match activity::activity_main().await {
+        Ok((activity, join_handle)) => (Arc::new(activity), join_handle),
+        Err(err) => {
+            error!("Failed setting up Activity: {:?}", err);
+            panic!("Failed setting up Activity.");
+        }
+    };
+
+    (
+        Arc::new(Reporting {
+            #[cfg(feature = "discord")]
+            discord_bot,
+            #[cfg(feature = "activity")]
+            activity,
+        }),
+        ReportingJoinHandle {
+            #[cfg(feature = "discord")]
+            discord_join_handle,
+            #[cfg(feature = "activity")]
+            activity_join_handle,
+        },
+    )
 }
 
 #[derive(Clone, Debug)]

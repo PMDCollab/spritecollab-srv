@@ -2,7 +2,7 @@
 
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use log::{info, trace, warn};
+use log::{debug, info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::mem::{discriminant, take};
@@ -208,6 +208,7 @@ impl EventHandler for Handler {
 
         // Main reporting loop.
         loop {
+            debug!("Discord thread waiting for events...");
             let mut data = ctx.data.write().await;
             let recv = data.get_mut::<ReportReceiver>().unwrap();
             let event_result = timeout(std::time::Duration::from_secs(60), recv.recv()).await;
@@ -215,7 +216,9 @@ impl EventHandler for Handler {
             let ur_recv = ur_recv.clone();
             let ur_send = ur_send.clone();
             drop(data);
+            debug!("Discord thread processing user requests...");
             Self::process_user_requests(ur_recv, ur_send, &mut ctx).await;
+            debug!("Discord thread processing event...");
             if let Ok(event) = event_result {
                 match event {
                     None => {
