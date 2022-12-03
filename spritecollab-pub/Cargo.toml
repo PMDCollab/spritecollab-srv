@@ -1,0 +1,11 @@
+[package]
+name = "spritecollab-pub"
+description = "ActivityPub server for assets and metadata of SpriteCollab."
+authors = ["Marco 'Capypara' Köpcke <hello@capypara.de>"]
+license = "GPL-3.0-or-later"
+version = "0.3.0"
+edition = "2021"
+
+[dependencies]
+sc-common-db = { path = "../sc-common-db" }
+

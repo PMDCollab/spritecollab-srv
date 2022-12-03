@@ -87,6 +87,7 @@ impl TypeMapKey for DatafilesFailedLastTypeAndTime {
 const REPORT_DATAFILES_COOLDOWN_H: i64 = 12;
 const GET_USER_CACHE_DURATION_MIN: i64 = 20;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum DiscordSetupError {
     #[error("No Discord token was provided.")]

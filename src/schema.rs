@@ -720,7 +720,7 @@ impl Monster {
             Some(collector) => Ok(collector
                 .find_form([
                     FormMatch::Exact(form_id),
-                    FormMatch::Exact(if shiny { 1 } else { 0 }),
+                    FormMatch::Exact(shiny as i32),
                     if female {
                         FormMatch::Exact(2)
                     } else {

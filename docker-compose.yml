@@ -1,18 +1,69 @@
 version: '3.3'
 services:
   spritecollab:
-    image: spritecollab-srv
-    build: .
+    restart: on-failure
+    image: ghcr.io/pmdcollab/spritecollab-srv:activity
+    build:
+      context: .
+      args:
+        - "features=discord,activity"
     env_file:
       - .env
     volumes:
       - ./workdir:/workdir
     user: 1000:1000
     ports:
-        - "31114:3000"
+      - "31114:3000"
     stop_grace_period: 10s
     depends_on:
       - redis
+      - amqp
+  spritecollab-pub:
+    restart: on-failure
+    image: ghcr.io/pmdcollab/spritecollab-srv:spritecollab-pub-latest
+    build:
+      context: .
+      dockerfile: spritecollab-pub/Dockerfile
+    env_file:
+      - spritecollab-pub/.env
+    volumes:
+      - ./workdir:/workdir
+    user: 1000:1000
+    ports:
+      - "31115:3001"
+    stop_grace_period: 10s
+    depends_on:
+      - redis
+      - amqp
+      - activitydb
+  amqp:
+    restart: always
+    image: rabbitmq:3-management-alpine
+    env_file:
+      - spritecollab-pub/.env
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - ./mq-data/data/:/var/lib/rabbitmq/
+  activitydb:
+    restart: always
+    image: mongo:6
+    env_file:
+      - .env
+    volumes:
+      - ./db-data:/data/db
+  mongo-express:
+    restart: always
+    image: mongo-express
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      ME_CONFIG_MONGODB_SERVER: activitydb
+    depends_on:
+      - activitydb
   redis:
     restart: always
     image: redis:7

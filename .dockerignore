@@ -1,5 +1,7 @@
 /target
 /workdir
+/db-data
+/mq-data
 /.idea
 /.env
 /.env.example
