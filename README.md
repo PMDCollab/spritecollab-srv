@@ -43,17 +43,23 @@ Discord IDs in credit entries.
 
 `activity` feature & ActivityPub server setup
 ---------------------------------------------
-With the `activity` feature enabled, the server application fills out MySQL database with
-a log of updates to each sprite action and portrait emotion for all forms.
+With the `activity` feature enabled, the server application records each update of the repo as 
+a log of updates to each sprite action and portrait emotion for all forms and sends them to a RabbitMQ server
+to be processed further.
 
 This repo contains a second bin-crate (`spritecollab-pub`) that runs an WebFinger+ActivityPub 
 This server is running on port `3001`. 
 
 This requires a MongoDB-compatible database and a AMQP server (the same that `spritecollab-srv` uses) 
-to be configured in the `.env` file in `spritecollab-pub`.
+to be configured in the `.env` file in `spritecollab-pub`. This ActivityPub collects the updates
+from the RabbitMQ server and uses them to implement a ActivityPub server where the forms are actors
+and the updates to the sprites/portraits are posts.
 
 With this feature enabled the main GraphQL server has additional HTTP endpoints to get historical
-image data for portraits and sprites (=data for older commits).
+image data for portraits and sprites (=data for older commits), optimized to be served on social media.
+
+The GraphQL schema has some additional fields related to ActivityPub interactions, incl. replies, if
+this feature is enabled.
 
 Schema
 ------
