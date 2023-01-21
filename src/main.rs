@@ -12,7 +12,6 @@ mod discord_reputation;
 mod reporting;
 mod scheduler;
 mod schema;
-mod search;
 mod sprite_collab;
 
 use std::mem::take;

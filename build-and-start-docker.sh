@@ -13,7 +13,7 @@ cargo clippy --package spritecollab-srv --features activity -- -D warnings
 cargo clippy --package spritecollab-srv --features discord,activity -- -D warnings
 #docker buildx build . -t ghcr.io/pmdcollab/spritecollab-srv:no-discord --build-arg features=""
 #docker buildx build . -t ghcr.io/pmdcollab/spritecollab-srv:latest
-docker buildx build . -t ghcr.io/pmdcollab/spritecollab-srv:activity --build-arg features="discord,activity"
+docker buildx build . -t ghcr.io/pmdcollab/spritecollab-srv:activity --build-arg features="activity"
 
 cargo clippy --package spritecollab-pub -- -D warnings
 docker buildx build . -f spritecollab-pub/Dockerfile -t ghcr.io/pmdcollab/spritecollab-srv:spritecollab-pub-latest

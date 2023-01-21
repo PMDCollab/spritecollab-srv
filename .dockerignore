@@ -3,11 +3,11 @@
 /db-data
 /mq-data
 /.idea
-/.env
-/.env.example
-/Dockerfile
+.env
+.env.example
+Dockerfile
 /docker-compose.yml
 /.git
 /.gitignore
-/.dockerignore
+.dockerignore
 /build-and-start-docker.sh

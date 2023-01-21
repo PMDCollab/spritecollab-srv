@@ -8,7 +8,6 @@ use crate::assets::url::{get_url, AssetType};
 use crate::cache::ScCache;
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
-use crate::datafiles::credit_names::{parse_credit_id, CreditNamesRow};
 use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
 use crate::reporting::Reporting;
@@ -23,6 +22,7 @@ use juniper::{
 };
 #[allow(unused_imports)]
 use log::warn;
+use sc_common::credit_row::{parse_credit_id, CreditRow};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -969,12 +969,12 @@ impl Credit {
 }
 
 impl Credit {
-    fn new(credit_entry: Option<&CreditNamesRow>, credit_id: &str) -> FieldResult<Credit> {
+    fn new(credit_entry: Option<&CreditRow>, credit_id: &str) -> FieldResult<Credit> {
         credit_entry
             .map(|v| Self {
-                id: v.credit_id.clone(),
-                name: v.name.as_ref().cloned(),
-                contact: v.contact.as_ref().cloned(),
+                id: v.credit_id.clone().into_owned(),
+                name: v.name.as_ref().map(|v| v.clone().into_owned()),
+                contact: v.contact.as_ref().map(|v| v.clone().into_owned()),
             })
             .ok_or_else(|| {
                 FieldError::new(
@@ -985,12 +985,12 @@ impl Credit {
     }
 }
 
-impl From<&CreditNamesRow> for Credit {
-    fn from(c: &CreditNamesRow) -> Self {
+impl From<&CreditRow<'_>> for Credit {
+    fn from(c: &CreditRow<'_>) -> Self {
         Self {
-            id: c.credit_id.clone(),
-            name: c.name.clone(),
-            contact: c.contact.clone(),
+            id: c.credit_id.clone().into_owned(),
+            name: c.name.as_ref().map(|v| v.clone().into_owned()),
+            contact: c.contact.as_ref().map(|v| v.clone().into_owned()),
         }
     }
 }

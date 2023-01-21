@@ -39,6 +39,7 @@ services:
   amqp:
     restart: always
     image: rabbitmq:3-management-alpine
+    hostname: amqp
     env_file:
       - spritecollab-pub/.env
     ports:

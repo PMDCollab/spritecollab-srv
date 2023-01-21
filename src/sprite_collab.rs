@@ -1,6 +1,5 @@
 //! The actual client implementation for SpriteCollab.
 use crate::cache::ScCache;
-use crate::datafiles::credit_names::{read_credit_names, CreditNames};
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
 use crate::datafiles::tracker::{read_tracker, Tracker};
 use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml, DatafilesReport};
@@ -14,11 +13,15 @@ use fred::types::RedisKey;
 use git2::build::CheckoutBuilder;
 use git2::{Oid, Repository, ResetType};
 use log::{debug, error, info, warn};
+use sc_common::credit_names::{read_credit_names, CreditNames};
+use sc_common::DataReadResult;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::cell::{BorrowError, Ref, RefCell};
 use std::fmt::{Debug, Formatter};
+use std::fs::File;
 use std::future::Future;
+use std::io::BufReader;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
@@ -81,8 +84,8 @@ impl Meta {
 }
 
 pub struct RepositoryUpdate {
-    repo: Repository,
-    changelist: Vec<Oid>,
+    pub(crate) repo: Repository,
+    pub(crate) changelist: Vec<Oid>,
 }
 
 unsafe impl Sync for RepositoryUpdate {}
@@ -365,7 +368,8 @@ async fn refresh_data_internal_do(
     let commit = repo_update.repo.head()?.peel_to_commit()?;
     let commit_id = commit.id();
     let commit_time_raw = commit.time();
-    let commit_time = FixedOffset::east(commit_time_raw.offset_minutes() * 60)
+    let commit_time = FixedOffset::east_opt(commit_time_raw.offset_minutes() * 60)
+        .unwrap()
         .from_local_datetime(
             &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
                 .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,
@@ -375,6 +379,10 @@ async fn refresh_data_internal_do(
 
     #[cfg(feature = "activity")]
     reporting.update_activity(repo_update).await?;
+
+    async fn do_read_credit_names(p: &PathBuf) -> DataReadResult<CreditNames> {
+        read_credit_names(BufReader::new(File::open(p)?))
+    }
 
     let scd = SpriteCollabData::new(
         read_and_report_error(
@@ -386,7 +394,7 @@ async fn refresh_data_internal_do(
         read_and_report_error(&repo_path.join("tracker.json"), read_tracker, &reporting).await?,
         read_and_report_error(
             &repo_path.join("credit_names.txt"),
-            read_credit_names,
+            do_read_credit_names,
             &reporting,
         )
         .await?,
@@ -398,15 +406,6 @@ async fn refresh_data_internal_do(
     // Update metadata
     let meta_acq = meta.lock().await;
     let mut meta_brw = meta_acq.try_borrow_mut()?;
-    let commit = repo.as_ref().unwrap().head()?.peel_to_commit()?;
-    let commit_time_raw = commit.time();
-    let commit_time = FixedOffset::east_opt(commit_time_raw.offset_minutes() * 60)
-        .unwrap()
-        .from_local_datetime(
-            &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
-                .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,
-        )
-        .unwrap();
 
     *meta_brw = Meta {
         assets_commit: commit_id.to_string(),

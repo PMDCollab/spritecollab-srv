@@ -1,5 +1,6 @@
 use crate::sprite_collab::RepositoryUpdate;
 use log::{debug, info};
+use sc_activity_rec::process_commit;
 use std::thread;
 use std::thread::JoinHandle;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
@@ -17,8 +18,19 @@ impl Activity {
                     debug!("Closing...");
                     break;
                 }
-                Some(_update) => {
-                    debug!("New update.");
+                Some(update) => {
+                    let count = update.changelist.len();
+                    for (i, change) in update.changelist.iter().enumerate() {
+                        info!("Activity Update - {} ({}/{})", change.to_string(), i, count);
+                        match process_commit(&update.repo, change).await {
+                            Ok(_) => {
+                                todo!()
+                            }
+                            Err(_) => {
+                                todo!()
+                            }
+                        }
+                    }
                 }
             }
         }

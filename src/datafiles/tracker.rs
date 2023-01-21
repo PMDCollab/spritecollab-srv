@@ -1,8 +1,8 @@
 use crate::cache::ScCache;
 use crate::datafiles::DataReadResult;
-use crate::search::fuzzy_find;
 use crate::sprite_collab::CacheBehaviour;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use sc_common::search::fuzzy_find;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};

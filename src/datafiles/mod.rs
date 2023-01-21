@@ -1,5 +1,4 @@
 pub mod anim_data_xml;
-pub mod credit_names;
 pub mod sprite_config;
 pub mod tracker;
 
@@ -10,44 +9,12 @@ use crate::ReportingEvent;
 use anyhow::anyhow;
 use ellipse::Ellipse;
 use itertools::Itertools;
+use sc_common::{DataReadError, DataReadResult};
 use std::fs::read_to_string;
 use std::future::Future;
 use std::iter::once;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use thiserror::Error;
-
-pub type DataReadResult<T> = Result<T, DataReadError>;
-
-#[derive(Error, Debug, Clone)]
-pub enum DataReadError {
-    #[error("JSON deserialization error: {0}")]
-    SerdeJson(Arc<serde_json::Error>),
-    #[error("CSV deserialization error: {0}")]
-    SerdeCsv(Arc<csv::Error>),
-    #[error("I/O error: {0}")]
-    Io(Arc<std::io::Error>),
-    #[error("Duplicate credit id while trying to read credit names: {0}")]
-    CreditsDuplicateCreditId(String),
-}
-
-impl From<serde_json::Error> for DataReadError {
-    fn from(e: serde_json::Error) -> Self {
-        DataReadError::SerdeJson(Arc::new(e))
-    }
-}
-
-impl From<csv::Error> for DataReadError {
-    fn from(e: csv::Error) -> Self {
-        DataReadError::SerdeCsv(Arc::new(e))
-    }
-}
-
-impl From<std::io::Error> for DataReadError {
-    fn from(e: std::io::Error) -> Self {
-        DataReadError::Io(Arc::new(e))
-    }
-}
 
 #[derive(Clone, Debug)]
 pub enum DatafilesReport {

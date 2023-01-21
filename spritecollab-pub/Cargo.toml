@@ -7,5 +7,5 @@ version = "0.3.0"
 edition = "2021"
 
 [dependencies]
-sc-common-db = { path = "../sc-common-db" }
+sc-common = { path = "../sc-common" }
 
