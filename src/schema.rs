@@ -885,7 +885,7 @@ impl Credit {
                                     // If the API reports a discriminator of "0", then this is a new-style username.
                                     // XXX: Should probably update Discord API crate and use whatever mechanism they provide.
                                     if &user.discriminator == "0" {
-                                        user.name.clone()
+                                        user.name
                                     } else {
                                         format!("{}#{}", user.name, user.discriminator)
                                     }

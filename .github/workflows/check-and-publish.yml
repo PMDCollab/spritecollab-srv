@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           profile: minimal
           components: rustfmt
           override: true
@@ -34,7 +34,7 @@ jobs:
 #
 #      - uses: actions-rs/toolchain@v1
 #        with:
-#          toolchain: nightly
+#          toolchain: stable
 #          profile: minimal
 #          components: rustfmt
 #          override: true
@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           profile: minimal
           components: clippy, rust-src
           override: true
@@ -71,7 +71,7 @@ jobs:
 
       - uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly
+          toolchain: stable
           profile: minimal
           components: clippy, rust-src
           override: true
