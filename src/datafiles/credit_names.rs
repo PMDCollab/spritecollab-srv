@@ -96,7 +96,7 @@ fn cleanup_discord_id<'de, D>(deser: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
-    Ok(parse_credit_id(&String::deserialize(deser)?))
+    Ok(parse_credit_id(String::deserialize(deser)?))
 }
 
 pub fn parse_credit_id<S: AsRef<str> + ToString>(credit_id_raw: S) -> String {

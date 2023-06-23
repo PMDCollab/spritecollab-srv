@@ -32,7 +32,7 @@ where
         match self {
             FileLookup::Sprite(_, mon, path) => {
                 let joined_p = join_monster_and_form(*mon, path, '/');
-                PathBuf::from(Config::Workdir.get()).join(&format!(
+                PathBuf::from(Config::Workdir.get()).join(format!(
                     "spritecollab/sprite/{}/{}-Anim.png",
                     joined_p, act
                 ))
@@ -40,7 +40,7 @@ where
             FileLookup::Portrait(_, mon, path) => {
                 let joined_p = join_monster_and_form(*mon, path, '/');
                 PathBuf::from(Config::Workdir.get())
-                    .join(&format!("spritecollab/portrait/{}/{}.png", joined_p, act))
+                    .join(format!("spritecollab/portrait/{}/{}.png", joined_p, act))
             }
         }
     }
