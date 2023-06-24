@@ -920,7 +920,7 @@ impl Credit {
             // every time wer pass this threshold. This will leak cache entries, but that's
             // probably ok.
             const REPUTATION_CACHE_TIMEOUT: i64 = 10800000;
-            let timekey = Utc::now().timestamp_millis() % REPUTATION_CACHE_TIMEOUT;
+            let timekey = Utc::now().timestamp_millis() / REPUTATION_CACHE_TIMEOUT;
             context
                 .cached_may_fail_chain(format!("discord_reputation|{}", timekey), || async {
                     tokio::time::timeout(
