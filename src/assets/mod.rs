@@ -73,9 +73,9 @@ pub async fn match_and_process_assets_path(
 
         let joined_p = join_monster_and_form(monster_idx, &form_path, '/');
         let portrait_base_path = PathBuf::from(Config::Workdir.get())
-            .join(&format!("spritecollab/portrait/{}", joined_p));
+            .join(format!("spritecollab/portrait/{}", joined_p));
         let sprite_base_path =
-            PathBuf::from(Config::Workdir.get()).join(&format!("spritecollab/sprite/{}", joined_p));
+            PathBuf::from(Config::Workdir.get()).join(format!("spritecollab/sprite/{}", joined_p));
 
         match asset_type {
             AssetType::PortraitSheet => Some(process_nested_result(

@@ -63,8 +63,8 @@ impl AnimDataXml {
     ) -> Result<Self, AnimDataXmlOpenError> {
         let joined_f = join_monster_and_form(monster_idx, path_to_form, '/');
         let path = PathBuf::from(Config::Workdir.get())
-            .join(&format!("spritecollab/sprite/{}/AnimData.xml", joined_f));
-        Self::open(&path)
+            .join(format!("spritecollab/sprite/{}/AnimData.xml", joined_f));
+        Self::open(path)
     }
 
     pub fn from_reader<R: Read>(r: R) -> Result<Self, serde_xml_rs::Error> {
