@@ -95,8 +95,8 @@ impl SpriteCollab {
         let config = RedisConfig::from_url(&format!("redis://{}:{}", redis_url, redis_port))
             .expect("Invalid Redis config.");
         let policy = ReconnectPolicy::new_linear(10, 10000, 1000);
-        let client = RedisClient::new(config);
-        client.connect(Some(policy));
+        let client = RedisClient::new(config, None, Some(policy));
+        client.connect();
         client
             .wait_for_connect()
             .await
@@ -343,7 +343,8 @@ async fn refresh_data_internal_do(
     let mut meta_brw = meta_acq.try_borrow_mut()?;
     let commit = repo.as_ref().unwrap().head()?.peel_to_commit()?;
     let commit_time_raw = commit.time();
-    let commit_time = FixedOffset::east(commit_time_raw.offset_minutes() * 60)
+    let commit_time = FixedOffset::east_opt(commit_time_raw.offset_minutes() * 60)
+        .unwrap()
         .from_local_datetime(
             &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
                 .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,

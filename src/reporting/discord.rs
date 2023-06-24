@@ -499,7 +499,7 @@ impl DiscordBot {
         data.insert::<ShardManagerShared>(client.shard_manager.clone());
         data.insert::<DatafilesFailedLastTypeAndTime>((
             None,
-            DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+            DateTime::from_utc(NaiveDateTime::from_timestamp_opt(0, 0).unwrap(), Utc),
         ));
         drop(data);
 
