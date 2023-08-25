@@ -2,11 +2,30 @@
 
 use crate::assets::util::join_monster_and_form;
 use crate::cache::ScCache;
+use crate::datafiles::local_credits_file::{get_credits, LocalCreditRow};
+use crate::datafiles::{DataReadError, DataReadResult};
 use crate::sprite_collab::CacheBehaviour;
 use crate::Config;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+use std::sync::Arc;
+
+#[derive(Clone, Copy, Debug)]
+pub enum AssetCategory {
+    Sprite,
+    Portrait,
+}
+
+impl Display for AssetCategory {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AssetCategory::Sprite => write!(f, "Sprite"),
+            AssetCategory::Portrait => write!(f, "Portrait"),
+        }
+    }
+}
 
 enum FileLookup<'a, I: Iterator<Item = &'a String> + Clone> {
     Sprite(I, i32, &'a [i32]),
@@ -174,4 +193,37 @@ pub async fn get_existing_portrait_file<C: ScCache + Send + Sync>(
     Ok(portrait_files
         .get(emotion.as_ref())
         .and_then(|locked| lookup_cache.if_has(&emotion, *locked)))
+}
+
+pub async fn get_local_credits_file<C: ScCache + Send + Sync>(
+    cache: &C,
+    asset_type: AssetCategory,
+    monster_idx: i32,
+    form_path: &[i32],
+) -> Result<DataReadResult<Vec<LocalCreditRow>>, C::Error> {
+    let content_result: DataReadResult<Option<Vec<u8>>> = cache
+        .cached_may_fail(
+            format!("credits_{}|{}/{:?}", asset_type, monster_idx, form_path),
+            || async {
+                let joined_p = join_monster_and_form(monster_idx, form_path, '/');
+                let path = match asset_type {
+                    AssetCategory::Sprite => PathBuf::from(Config::Workdir.get())
+                        .join(format!("spritecollab/sprite/{}/credits.txt", joined_p)),
+                    AssetCategory::Portrait => PathBuf::from(Config::Workdir.get())
+                        .join(format!("spritecollab/portrait/{}/credits.txt", joined_p)),
+                };
+                if path.exists() {
+                    Ok(CacheBehaviour::Cache(Some(tokio::fs::read(path).await?)))
+                } else {
+                    Ok(CacheBehaviour::Cache(None))
+                }
+            },
+        )
+        .await?
+        .map_err(|e| DataReadError::Io(Arc::new(e)));
+    match content_result {
+        Ok(Some(content)) => Ok(get_credits(content)),
+        Ok(None) => Ok(Ok(Vec::new())),
+        Err(e) => Ok(Err(e)),
+    }
 }

@@ -1,5 +1,6 @@
 pub mod anim_data_xml;
 pub mod credit_names;
+pub mod local_credits_file;
 pub mod sprite_config;
 pub mod tracker;
 
@@ -10,6 +11,9 @@ use crate::ReportingEvent;
 use anyhow::anyhow;
 use ellipse::Ellipse;
 use itertools::Itertools;
+use once_cell::sync::OnceCell;
+use regex::Regex;
+use serde::{Deserialize, Deserializer};
 use std::fs::read_to_string;
 use std::future::Future;
 use std::iter::once;
@@ -18,6 +22,8 @@ use std::sync::Arc;
 use thiserror::Error;
 
 pub type DataReadResult<T> = Result<T, DataReadError>;
+
+static DISCORD_REGEX: OnceCell<Regex> = OnceCell::new();
 
 #[derive(Error, Debug, Clone)]
 pub enum DataReadError {
@@ -249,5 +255,23 @@ pub async fn try_read_in_anim_data_xml<R: AsRef<Reporting>>(
         Err(e)
     } else {
         Ok(())
+    }
+}
+
+fn cleanup_discord_id<'de, D>(deser: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(parse_credit_id(String::deserialize(deser)?))
+}
+
+pub fn parse_credit_id<S: AsRef<str> + ToString>(credit_id_raw: S) -> String {
+    let cell = &DISCORD_REGEX;
+    let regex = cell.get_or_init(|| Regex::new(r"<@!(\d+)>").unwrap());
+
+    if let Some(discord_id) = regex.captures(credit_id_raw.as_ref()) {
+        discord_id[1].to_string()
+    } else {
+        credit_id_raw.to_string()
     }
 }

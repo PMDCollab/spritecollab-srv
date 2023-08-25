@@ -1,16 +1,12 @@
-use crate::datafiles::{DataReadError, DataReadResult};
+use crate::datafiles::{cleanup_discord_id, DataReadError, DataReadResult};
 use crate::search::fuzzy_find;
 use csv::ReaderBuilder;
-use once_cell::sync::OnceCell;
-use regex::Regex;
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-
-static DISCORD_REGEX: OnceCell<Regex> = OnceCell::new();
 
 pub async fn read_credit_names<P: AsRef<Path>>(path: P) -> DataReadResult<CreditNames> {
     let input = File::open(path)?;
@@ -90,22 +86,4 @@ pub struct CreditNamesRow {
     pub name: Option<String>,
     #[serde(rename(deserialize = "Contact"))]
     pub contact: Option<String>,
-}
-
-fn cleanup_discord_id<'de, D>(deser: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(parse_credit_id(String::deserialize(deser)?))
-}
-
-pub fn parse_credit_id<S: AsRef<str> + ToString>(credit_id_raw: S) -> String {
-    let cell = &DISCORD_REGEX;
-    let regex = cell.get_or_init(|| Regex::new(r"<@!(\d+)>").unwrap());
-
-    if let Some(discord_id) = regex.captures(credit_id_raw.as_ref()) {
-        discord_id[1].to_string()
-    } else {
-        credit_id_raw.to_string()
-    }
 }

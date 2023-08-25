@@ -1,14 +1,16 @@
 #![cfg_attr(not(feature = "discord"), allow(unused_variables))]
 
 use crate::assets::fs_check::{
-    get_existing_portrait_file, get_existing_sprite_file, iter_existing_portrait_files,
-    iter_existing_sprite_files,
+    get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
+    iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
 };
 use crate::assets::url::{get_url, AssetType};
 use crate::cache::ScCache;
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
-use crate::datafiles::credit_names::{parse_credit_id, CreditNamesRow};
+use crate::datafiles::credit_names::CreditNamesRow;
+use crate::datafiles::local_credits_file::LocalCreditRow;
+use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
 use crate::reporting::Reporting;
@@ -34,7 +36,7 @@ use std::sync::Arc;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
-const API_VERSION: &str = "1.3";
+const API_VERSION: &str = "1.4";
 
 #[repr(i64)]
 #[derive(GraphQLEnum)]
@@ -123,6 +125,61 @@ pub struct Portrait {
 pub struct OtherBounty {
     phase: i32,
     bounty: i32,
+}
+
+pub struct MonsterHistory {
+    credit: Option<Credit>,
+    modified_date: DateTime<Utc>,
+    modifications: Vec<String>,
+    obsolete: bool,
+}
+
+impl MonsterHistory {
+    fn try_from_credit_row(context: &Context, value: LocalCreditRow) -> Result<Self, FieldError> {
+        let credit_id = parse_credit_id(value.credit_id);
+        let credit = if credit_id.is_empty() {
+            None
+        } else {
+            Some(Credit::new(
+                context.collab.data().credit_names.get(&credit_id),
+                &credit_id,
+            )?)
+        };
+        Ok(Self {
+            credit,
+            modified_date: value.date,
+            modifications: value.items,
+            obsolete: value.obsolete,
+        })
+    }
+}
+
+#[graphql_object(Context = Context)]
+#[graphql(description = "An entry in the history log for a monster sprite or portrait.")]
+impl MonsterHistory {
+    #[graphql(description = "The author that contributed for this history entry.")]
+    pub fn credit(&self) -> Option<&Credit> {
+        self.credit.as_ref()
+    }
+
+    #[graphql(description = "The date of the history entry submission.")]
+    pub fn modified_date(&self) -> DateTime<Utc> {
+        self.modified_date
+    }
+
+    #[graphql(
+        description = "A list of emotions or actions that were changed in this history entry."
+    )]
+    pub fn modifications(&self) -> &[String] {
+        &self.modifications
+    }
+
+    #[graphql(
+        description = "True if the credit for this history entry was marked as no longer relevant for the current portraits or sprites."
+    )]
+    pub fn obsolete(&self) -> bool {
+        self.obsolete
+    }
 }
 
 #[derive(GraphQLObject)]
@@ -369,6 +426,17 @@ impl MonsterFormPortraits {
     fn modified_date(&self) -> Option<DateTime<Utc>> {
         self.0.portrait_modified
     }
+
+    #[graphql(
+        description = "List of all modifications made to those portraits since its creation."
+    )]
+    async fn history(&self, context: &Context) -> FieldResult<Vec<MonsterHistory>> {
+        get_local_credits_file(&context, AssetCategory::Portrait, self.1, &self.2)
+            .await??
+            .into_iter()
+            .map(|i| MonsterHistory::try_from_credit_row(context, i))
+            .collect::<Result<Vec<_>, _>>()
+    }
 }
 
 // TODO: Once async works better with references in Juniper, switch back to this:
@@ -576,6 +644,15 @@ impl MonsterFormSprites {
     #[graphql(description = "The date and time this sprite set was last updated.")]
     fn modified_date(&self) -> Option<DateTime<Utc>> {
         self.0.sprite_modified
+    }
+
+    #[graphql(description = "List of all modifications made to those sprites since its creation.")]
+    async fn history(&self, context: &Context) -> FieldResult<Vec<MonsterHistory>> {
+        get_local_credits_file(&context, AssetCategory::Sprite, self.1, &self.2)
+            .await??
+            .into_iter()
+            .map(|i| MonsterHistory::try_from_credit_row(context, i))
+            .collect::<Result<Vec<_>, _>>()
     }
 }
 
