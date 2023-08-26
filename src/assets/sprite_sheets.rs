@@ -1,6 +1,6 @@
 use crate::assets::img_util::{add_palette_to, to_png};
+use crate::cache::CacheBehaviour;
 use crate::datafiles::anim_data_xml::AnimDataXml;
-use crate::sprite_collab::CacheBehaviour;
 use anyhow::anyhow;
 use image::{DynamicImage, GenericImage, GenericImageView, RgbaImage};
 use indexmap::IndexMap;

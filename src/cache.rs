@@ -1,4 +1,3 @@
-use crate::sprite_collab::CacheBehaviour;
 use async_trait::async_trait;
 use fred::types::RedisKey;
 use serde::de::DeserializeOwned;
@@ -6,6 +5,13 @@ use serde::Serialize;
 use std::convert::Infallible;
 use std::future::Future;
 use std::hint::unreachable_unchecked;
+
+pub enum CacheBehaviour<T> {
+    /// Cache this value.
+    Cache(T),
+    /// Do not cache this value.
+    NoCache(T),
+}
 
 #[async_trait]
 /// Trait for caching data in Redis, and calculating it if it's not in the cache yet.

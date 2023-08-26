@@ -1,10 +1,10 @@
 //! This module double checks if sprite and portrait files actually exist.
 
 use crate::assets::util::join_monster_and_form;
+use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
 use crate::datafiles::local_credits_file::{get_credits, LocalCreditRow};
 use crate::datafiles::{DataReadError, DataReadResult};
-use crate::sprite_collab::CacheBehaviour;
 use crate::Config;
 use std::borrow::Cow;
 use std::collections::HashMap;

@@ -1,5 +1,5 @@
 //! The actual client implementation for SpriteCollab.
-use crate::cache::ScCache;
+use crate::cache::{CacheBehaviour, ScCache};
 use crate::datafiles::credit_names::{read_credit_names, CreditNames};
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
 use crate::datafiles::tracker::{read_tracker, Tracker};
@@ -39,13 +39,6 @@ pub struct SpriteCollabData {
     pub sprite_config: SpriteConfig,
     pub tracker: Arc<Tracker>,
     pub credit_names: CreditNames,
-}
-
-pub enum CacheBehaviour<T> {
-    /// Cache this value.
-    Cache(T),
-    /// Do not cache this value.
-    NoCache(T),
 }
 
 impl SpriteCollabData {

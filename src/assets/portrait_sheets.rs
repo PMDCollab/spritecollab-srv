@@ -1,6 +1,6 @@
 use crate::assets::img_util::{add_palette_to, to_png};
+use crate::cache::CacheBehaviour;
 use crate::datafiles::tracker::Group;
-use crate::sprite_collab::CacheBehaviour;
 use image::{GenericImage, RgbaImage};
 use std::cmp::max;
 use std::collections::HashMap;

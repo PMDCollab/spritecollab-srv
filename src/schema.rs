@@ -5,7 +5,7 @@ use crate::assets::fs_check::{
     iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
 };
 use crate::assets::url::{get_url, AssetType};
-use crate::cache::ScCache;
+use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
 use crate::datafiles::credit_names::CreditNamesRow;
@@ -14,7 +14,7 @@ use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
 use crate::reporting::Reporting;
-use crate::sprite_collab::{CacheBehaviour, SpriteCollab};
+use crate::sprite_collab::SpriteCollab;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use fred::types::RedisKey;

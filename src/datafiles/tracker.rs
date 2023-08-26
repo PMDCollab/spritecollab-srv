@@ -1,7 +1,7 @@
+use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
 use crate::datafiles::DataReadResult;
 use crate::search::fuzzy_find;
-use crate::sprite_collab::CacheBehaviour;
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;

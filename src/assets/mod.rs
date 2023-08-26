@@ -4,9 +4,9 @@ use crate::assets::portrait_sheets::{
 use crate::assets::sprite_sheets::make_sprite_recolor_sheet;
 use crate::assets::url::{match_url, AssetType};
 use crate::assets::util::{force_non_shiny_group, join_monster_and_form};
+use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
 use crate::datafiles::tracker::{FormMatch, MonsterFormCollector};
-use crate::sprite_collab::CacheBehaviour;
 use crate::{Config, SpriteCollab};
 use hyper::http::HeaderValue;
 use hyper::{Body, Method, Response, StatusCode};
