@@ -10,7 +10,7 @@ jobs:
     name: Rustfmt Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -24,7 +24,7 @@ jobs:
     name: Clippy Checks (Default)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -38,7 +38,7 @@ jobs:
     name: Clippy Checks (All features)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -61,7 +61,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Log in to the Container registry
         uses: docker/login-action@v2
