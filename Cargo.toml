@@ -3,12 +3,11 @@ name = "spritecollab-srv"
 description = "GraphQL server for interacting with assets and metadata of SpriteCollab."
 authors = ["Marco 'Capypara' Köpcke <hello@capypara.de>"]
 license = "GPL-3.0-or-later"
-version = "0.3.1"
+version = "0.4.0"
 edition = "2021"
 
 [features]
 discord = ["serenity", "gethostname"]
-discord-reputation = ["hyper-tls"]
 
 [dependencies]
 log = "0.4"
@@ -17,7 +16,6 @@ dotenv = "0.15"
 git2 = "0.18"
 juniper = "0.15"
 hyper = { version = "0.14", features = ["full"] }
-hyper-tls = { version = "0.5", optional = true }
 juniper_hyper = "0.8"
 tokio = { version = "1.18", features = ["full"] }
 route-recognizer = "0.3"

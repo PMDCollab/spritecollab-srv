@@ -36,7 +36,7 @@ use std::sync::Arc;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
-const API_VERSION: &str = "1.4";
+const API_VERSION: &str = "1.5";
 
 #[repr(i64)]
 #[derive(GraphQLEnum)]
@@ -967,63 +967,6 @@ impl Credit {
             }
         }
         #[cfg(not(feature = "discord"))]
-        {
-            Ok(None)
-        }
-    }
-
-    #[graphql(
-        description = "This may return some sort of point value for reputation for this user, if applicable and the source to get these points from is returning them properly. The value may be cached/stale for a while."
-    )]
-    async fn reputation(&self, context: &Context) -> FieldResult<Option<i32>> {
-        #[cfg(feature = "discord-reputation")]
-        {
-            // We only keep the cache valid for this time, by using new keys
-            // every time wer pass this threshold. This will leak cache entries, but that's
-            // probably ok.
-            const REPUTATION_CACHE_TIMEOUT: i64 = 10800000;
-            let timekey = Utc::now().timestamp_millis() % REPUTATION_CACHE_TIMEOUT;
-            context
-                .cached_may_fail_chain(format!("discord_reputation|{}", timekey), || async {
-                    tokio::time::timeout(
-                        // We don't wait here for long. If we can't get it that quick,
-                        // it's not worth it.
-                        std::time::Duration::from_millis(20000),
-                        crate::discord_reputation::fetch_reputation(
-                            &SystemConfig::DiscordReputationFetchUrl
-                                .get_or_none()
-                                .ok_or_else(|| {
-                                    FieldError::new(
-                                        "Internal Server Error: Misconfigured reputation endpoint.",
-                                        graphql_value!(None),
-                                    )
-                                })?,
-                        ),
-                    )
-                    .await
-                    .map_err(|_| {
-                        FieldError::new(
-                            "Internal Server Error: Timeout tring to fetch reputation.",
-                            graphql_value!(None),
-                        )
-                    })
-                    .and_then(|success_cache| {
-                        success_cache
-                            .map_err(|e| {
-                                FieldError::new(
-                                    "Internal Server Error: Failed fetching the map of reputation.",
-                                    graphql_value!({
-                                        "details": (e.to_string())
-                                    }),
-                                )
-                            })
-                            .map(CacheBehaviour::Cache)
-                    })
-                })
-                .await
-                .map(|reputation_list| reputation_list.get(&self.id).copied())
-        }
-        #[cfg(not(feature = "discord-reputation"))]
         {
             Ok(None)
         }

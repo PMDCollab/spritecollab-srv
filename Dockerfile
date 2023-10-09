@@ -11,14 +11,14 @@ RUN USER=root cargo new --bin spritecollab-srv
 WORKDIR /src/spritecollab-srv
 COPY ./Cargo.lock ./Cargo.lock
 COPY ./Cargo.toml ./Cargo.toml
-RUN cargo build --release --features discord,discord-reputation  # collects dependencies
+RUN cargo build --release --features discord  # collects dependencies
 RUN rm src/*.rs  # removes the `cargo new` generated files.
 
 ADD . ./
 
 RUN rm ./target/release/deps/spritecollab_srv*
 
-RUN cargo build --release --features discord,discord-reputation
+RUN cargo build --release --features discord
 RUN strip /src/spritecollab-srv/target/release/spritecollab-srv
 
 

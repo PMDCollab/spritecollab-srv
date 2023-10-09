@@ -7,8 +7,6 @@ mod assets;
 mod cache;
 mod config;
 mod datafiles;
-#[cfg(feature = "discord-reputation")]
-mod discord_reputation;
 mod reporting;
 mod scheduler;
 mod schema;

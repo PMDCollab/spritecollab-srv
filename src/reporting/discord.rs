@@ -102,7 +102,7 @@ pub enum DiscordSetupError {
     #[error("Server could not be retrieved (maybe not on the server?): {0} -> {1}")]
     GuildNotFound(u64, Error),
     #[error("The channel has an invalid type. It must be a guild text channel: {0}")]
-    InvalidChannelType(Box<Channel>),
+    InvalidChannelType(Channel),
 }
 
 impl ReportingEvent {
@@ -193,9 +193,7 @@ impl EventHandler for Handler {
                 }
                 _ => {
                     sender
-                        .send(Err(DiscordSetupError::InvalidChannelType(Box::new(
-                            channel,
-                        ))))
+                        .send(Err(DiscordSetupError::InvalidChannelType(channel)))
                         .await
                         .unwrap();
                     return;

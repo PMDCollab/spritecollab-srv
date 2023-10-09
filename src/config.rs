@@ -1,7 +1,7 @@
 use dotenv::dotenv;
 use std::env::var;
 
-#[allow(dead_code)] // features
+#[allow(dead_code)] // discord feature
 pub enum Config {
     Address,
     GitRepo,
@@ -11,7 +11,6 @@ pub enum Config {
     RedisPort,
     DiscordToken,
     DiscordChannels,
-    DiscordReputationFetchUrl,
 }
 
 impl Config {
@@ -45,8 +44,6 @@ impl Config {
             Config::DiscordChannels => {
                 var("SCSRV_DISCORD_CHANNELS").expect("SCSRV_DISCORD_CHANNELS is not set")
             }
-            Config::DiscordReputationFetchUrl => var("SCSRV_DISCORD_REPUTATION_FETCH_URL")
-                .expect("SCSRV_DISCORD_REPUTATION_FETCH_URL is not set"),
         }
     }
 
@@ -60,7 +57,6 @@ impl Config {
             Config::RedisPort => var("SCSRV_REDIS_PORT").ok(),
             Config::DiscordToken => var("SCSRV_DISCORD_TOKEN").ok(),
             Config::DiscordChannels => var("SCSRV_DISCORD_CHANNELS").ok(),
-            Config::DiscordReputationFetchUrl => var("SCSRV_DISCORD_REPUTATION_FETCH_URL").ok(),
         }
     }
 
