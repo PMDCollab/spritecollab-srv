@@ -96,7 +96,7 @@ where
 fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &str) {
     names
         .entry(name.to_lowercase())
-        .or_insert_with(Vec::new)
+        .or_default()
         .push(monster_idx);
 }
 

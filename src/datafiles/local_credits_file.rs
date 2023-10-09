@@ -58,5 +58,5 @@ where
     let s = String::deserialize(deser)?;
     let t = NaiveDateTime::parse_from_str(&s, "%Y-%m-%d %H:%M:%S%.f")
         .map_err(|e| Error::custom(e.to_string()))?;
-    Ok(DateTime::<Utc>::from_utc(t, Utc))
+    Ok(DateTime::<Utc>::from_naive_utc_and_offset(t, Utc))
 }
