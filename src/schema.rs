@@ -500,6 +500,11 @@ impl MonsterFormSprites {
         )
     }
 
+    #[inline]
+    fn sprites_available(&self) -> bool {
+        !self.0.sprite_files.is_empty()
+    }
+
     /// XXX: This isn't ideal, but Juniper is a bit silly about it's Sync requirements, so there's
     /// currently no way to do this truly async as far as I can tell.
     async fn get_action_map(&self, context: &Context) -> FieldResult<HashMap<String, String>> {
@@ -562,83 +567,88 @@ impl MonsterFormSprites {
 
     #[graphql(description = "URL to the AnimData XML file for this sprite set.")]
     fn anim_data_xml(&self, context: &Context) -> Option<String> {
-        if self.0.sprite_complete == Phase::Incomplete as i64 {
-            return None;
+        if self.sprites_available() {
+            Some(get_url(
+                AssetType::SpriteAnimDataXml,
+                &context.this_server_url,
+                self.1,
+                &self.2,
+            ))
+        } else {
+            None
         }
-        Some(get_url(
-            AssetType::SpriteAnimDataXml,
-            &context.this_server_url,
-            self.1,
-            &self.2,
-        ))
     }
 
     #[graphql(description = "URL to a SpriteBot format ZIP archive of all sprites.")]
     fn zip_url(&self, context: &Context) -> Option<String> {
-        if self.0.sprite_complete == Phase::Incomplete as i64 {
-            return None;
+        if self.sprites_available() {
+            Some(get_url(
+                AssetType::SpriteZip,
+                &context.this_server_url,
+                self.1,
+                &self.2,
+            ))
+        } else {
+            None
         }
-        Some(get_url(
-            AssetType::SpriteZip,
-            &context.this_server_url,
-            self.1,
-            &self.2,
-        ))
     }
 
     #[graphql(description = "URL to a SpriteBot format recolor sheet.")]
     fn recolor_sheet_url(&self, context: &Context) -> Option<String> {
-        if self.0.sprite_complete == Phase::Incomplete as i64 {
-            return None;
+        if self.sprites_available() {
+            Some(get_url(
+                AssetType::SpriteRecolorSheet,
+                &context.this_server_url,
+                self.1,
+                &self.2,
+            ))
+        } else {
+            None
         }
-        Some(get_url(
-            AssetType::SpriteRecolorSheet,
-            &context.this_server_url,
-            self.1,
-            &self.2,
-        ))
     }
 
     #[graphql(description = "A list of all existing sprites for the actions.")]
     async fn actions(&self, context: &Context) -> FieldResult<Vec<SpriteUnion>> {
-        if self.0.sprite_complete == Phase::Incomplete as i64 {
-            return Ok(vec![]);
+        if self.sprites_available() {
+            let action_copy_map = self.get_action_map(context).await?;
+            Ok(
+                iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
+                    .await?
+                    .into_iter()
+                    .map(|(action, locked)| {
+                        self.process_sprite_action(
+                            &action,
+                            locked,
+                            &action_copy_map,
+                            &context.this_server_url,
+                        )
+                    })
+                    .collect(),
+            )
+        } else {
+            Ok(vec![])
         }
-        let action_copy_map = self.get_action_map(context).await?;
-        Ok(
-            iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
-                .await?
-                .into_iter()
-                .map(|(action, locked)| {
-                    self.process_sprite_action(
-                        &action,
-                        locked,
-                        &action_copy_map,
-                        &context.this_server_url,
-                    )
-                })
-                .collect(),
-        )
     }
 
     #[graphql(description = "A single sprite for a given action.")]
     async fn action(&self, context: &Context, action: String) -> FieldResult<Option<SpriteUnion>> {
-        if self.0.sprite_complete == Phase::Incomplete as i64 {
-            return Ok(None);
+        if self.sprites_available() {
+            let action_copy_map = self.get_action_map(context).await?;
+            Ok(
+                get_existing_sprite_file(&context, &self.0.sprite_files, &action, self.1, &self.2)
+                    .await?
+                    .map(|locked| {
+                        self.process_sprite_action(
+                            &action,
+                            locked,
+                            &action_copy_map,
+                            &context.this_server_url,
+                        )
+                    }),
+            )
+        } else {
+            Ok(None)
         }
-        let action_copy_map = self.get_action_map(context).await?;
-        Ok(
-            get_existing_sprite_file(&context, &self.0.sprite_files, &action, self.1, &self.2)
-                .await?
-                .map(|locked| {
-                    self.process_sprite_action(
-                        &action,
-                        locked,
-                        &action_copy_map,
-                        &context.this_server_url,
-                    )
-                }),
-        )
     }
 
     #[graphql(description = "The date and time this sprite set was last updated.")]
