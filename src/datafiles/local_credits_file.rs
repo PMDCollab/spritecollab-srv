@@ -14,15 +14,68 @@ pub fn get_credits<I: AsRef<[u8]>>(input: I) -> DataReadResult<Vec<LocalCreditRo
 
     let mut credits: Vec<LocalCreditRow> = Vec::with_capacity(50);
 
-    for result in rdr.deserialize() {
-        let record: LocalCreditRow = result?;
+    for result in rdr.deserialize::<LocalCreditRow>() {
+        let record = {
+            match result {
+                Ok(record) => record,
+                Err(initial_err) => {
+                    // If this fails, try to read as old credits file and convert
+                    return match get_credits_old(input) {
+                        Ok(old_records) => {
+                            Ok(old_records.into_iter().map(convert_old_credits).collect())
+                        }
+                        // If that also fails, return initial error
+                        Err(_) => Err(initial_err.into()),
+                    };
+                }
+            }
+        };
         credits.push(record);
     }
     Ok(credits)
 }
 
+fn get_credits_old<I: AsRef<[u8]>>(input: I) -> DataReadResult<Vec<LocalCreditRowV0>> {
+    let mut rdr = ReaderBuilder::new()
+        .delimiter(b'\t')
+        .has_headers(false)
+        .from_reader(BufReader::new(input.as_ref()));
+
+    let mut credits: Vec<LocalCreditRowV0> = Vec::with_capacity(50);
+
+    for result in rdr.deserialize() {
+        let record: LocalCreditRowV0 = result?;
+        credits.push(record);
+    }
+    Ok(credits)
+}
+
+fn convert_old_credits(old_record: LocalCreditRowV0) -> LocalCreditRow {
+    LocalCreditRow {
+        date: old_record.date,
+        credit_id: old_record.credit_id,
+        obsolete: old_record.obsolete,
+        license: "Unknown".to_string(),
+        items: old_record.items,
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct LocalCreditRow {
+    #[serde(deserialize_with = "parse_time")]
+    pub date: DateTime<Utc>,
+    #[serde(deserialize_with = "cleanup_discord_id")]
+    pub credit_id: String,
+    #[serde(deserialize_with = "parse_obsolete")]
+    pub obsolete: bool,
+    pub license: String,
+    #[serde(deserialize_with = "parse_items")]
+    pub items: Vec<String>,
+}
+
+// Old version of the credits rows, for backwards compat.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+struct LocalCreditRowV0 {
     #[serde(deserialize_with = "parse_time")]
     pub date: DateTime<Utc>,
     #[serde(deserialize_with = "cleanup_discord_id")]

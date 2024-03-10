@@ -5,6 +5,8 @@ use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub enum AssetType<'a> {
+    PortraitCreditsTxt,
+    SpriteCreditsTxt,
     PortraitSheet,
     PortraitRecolorSheet,
     Portrait(&'a str),
@@ -26,6 +28,20 @@ pub fn get_url(
     let assets_srv_url = Config::GitAssetsUrl.get();
 
     match asset_type {
+        AssetType::PortraitCreditsTxt => {
+            let joined_f_dash = join_monster_and_form(monster_id, path_to_form, '-');
+            format!(
+                "{}/assets/portrait-credits-{}.txt",
+                this_srv_url, joined_f_dash
+            )
+        }
+        AssetType::SpriteCreditsTxt => {
+            let joined_f_dash = join_monster_and_form(monster_id, path_to_form, '-');
+            format!(
+                "{}/assets/sprite-credits-{}.txt",
+                this_srv_url, joined_f_dash
+            )
+        }
         AssetType::PortraitSheet => {
             let joined_f_dash = join_monster_and_form(monster_id, path_to_form, '-');
             format!("{}/assets/portrait-{}.png", this_srv_url, joined_f_dash)
@@ -110,6 +126,14 @@ pub fn match_url(path: &str) -> Option<(i32, VecDeque<i32>, AssetType)> {
     // SpriteBot-formatted file names.
     let path = path.replace('-', "/");
 
+    router.add(
+        "/assets/portrait/credits/*formpath.txt",
+        AssetType::PortraitCreditsTxt,
+    );
+    router.add(
+        "/assets/sprite/credits/*formpath.txt",
+        AssetType::SpriteCreditsTxt,
+    );
     router.add("/assets/portrait/*formpath.png", AssetType::PortraitSheet);
     router.add(
         "/assets/portrait_recolor/*formpath.png",

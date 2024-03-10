@@ -36,7 +36,70 @@ use std::sync::Arc;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
-const API_VERSION: &str = "1.5";
+const API_VERSION: &str = "1.6";
+
+#[derive(GraphQLEnum)]
+#[graphql(description = "A known license from a common list of options.")]
+pub enum KnownLicenseType {
+    #[graphql(description = "The license could not be determined.")]
+    Unknown,
+    #[graphql(description = "The license is not specified / the work is unlicensed.")]
+    Unspecified,
+    #[graphql(description = "Original license: When using, you must credit the contributors.")]
+    PMDCollab1,
+    #[graphql(
+        description = "License for works between May 2023 - March 2024: You are free to use, copy redistribute or modify sprites and portraits from this repository for your own projects and contributions. When using portraits or sprites from this repository, you must credit the contributors for each portrait and sprite you use."
+    )]
+    PMDCollab2,
+    #[graphql(
+        description = "Licensed under Creative Commons Attribution-NonCommercial 4.0 International"
+    )]
+    CcByNc4,
+}
+
+#[derive(GraphQLObject)]
+#[graphql(description = "A known license from a common list of options.")]
+pub struct KnownLicense {
+    license: KnownLicenseType,
+}
+
+#[derive(GraphQLObject)]
+#[graphql(description = "An unknown license. The name is the identifier for the license.")]
+pub struct OtherLicense {
+    name: String,
+}
+
+#[derive(GraphQLUnion)]
+#[graphql(
+    description = "The license that applies to the image of a sprite action or portrait emotion."
+)]
+pub enum License {
+    KnownLicense(KnownLicense),
+    Other(OtherLicense),
+}
+
+impl From<String> for License {
+    fn from(value: String) -> Self {
+        match &*value {
+            "Unknown" => License::KnownLicense(KnownLicense {
+                license: KnownLicenseType::Unknown,
+            }),
+            "Unspecified" => License::KnownLicense(KnownLicense {
+                license: KnownLicenseType::Unspecified,
+            }),
+            "PMDCollab_1" => License::KnownLicense(KnownLicense {
+                license: KnownLicenseType::PMDCollab1,
+            }),
+            "PMDCollab_2" => License::KnownLicense(KnownLicense {
+                license: KnownLicenseType::PMDCollab2,
+            }),
+            "CC_BY-NC_4" => License::KnownLicense(KnownLicense {
+                license: KnownLicenseType::CcByNc4,
+            }),
+            other => License::Other(OtherLicense { name: value }),
+        }
+    }
+}
 
 #[repr(i64)]
 #[derive(GraphQLEnum)]
@@ -132,6 +195,7 @@ pub struct MonsterHistory {
     modified_date: DateTime<Utc>,
     modifications: Vec<String>,
     obsolete: bool,
+    license: License,
 }
 
 impl MonsterHistory {
@@ -150,6 +214,7 @@ impl MonsterHistory {
             modified_date: value.date,
             modifications: value.items,
             obsolete: value.obsolete,
+            license: value.license.into(),
         })
     }
 }
@@ -179,6 +244,11 @@ impl MonsterHistory {
     )]
     pub fn obsolete(&self) -> bool {
         self.obsolete
+    }
+
+    #[graphql(description = "The license applying to this modification.")]
+    pub fn license(&self) -> &License {
+        &self.license
     }
 }
 
@@ -437,6 +507,18 @@ impl MonsterFormPortraits {
             .map(|i| MonsterHistory::try_from_credit_row(context, i))
             .collect::<Result<Vec<_>, _>>()
     }
+
+    #[graphql(
+        description = "Returns a URL to retrieve the credits text file for the portraits for this form."
+    )]
+    fn history_url(&self, context: &Context) -> Option<String> {
+        Some(get_url(
+            AssetType::PortraitCreditsTxt,
+            &context.this_server_url,
+            self.1,
+            &self.2,
+        ))
+    }
 }
 
 // TODO: Once async works better with references in Juniper, switch back to this:
@@ -663,6 +745,18 @@ impl MonsterFormSprites {
             .into_iter()
             .map(|i| MonsterHistory::try_from_credit_row(context, i))
             .collect::<Result<Vec<_>, _>>()
+    }
+
+    #[graphql(
+        description = "Returns a URL to retrieve the credits text file for the sprites for this form."
+    )]
+    fn history_url(&self, context: &Context) -> Option<String> {
+        Some(get_url(
+            AssetType::SpriteCreditsTxt,
+            &context.this_server_url,
+            self.1,
+            &self.2,
+        ))
     }
 }
 

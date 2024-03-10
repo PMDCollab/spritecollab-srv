@@ -78,6 +78,26 @@ pub async fn match_and_process_assets_path(
             PathBuf::from(Config::Workdir.get()).join(format!("spritecollab/sprite/{}", joined_p));
 
         match asset_type {
+            AssetType::PortraitCreditsTxt => Some(process_nested_result(
+                sprite_collab
+                    .cached_may_fail(
+                        format!("portrait_credits_txt|{}/{:?}", monster_idx, form_path),
+                        || make_credits_txt(&portrait_base_path),
+                    )
+                    .await
+                    .map(|r| r.map(ZipResponse)),
+                path,
+            )),
+            AssetType::SpriteCreditsTxt => Some(process_nested_result(
+                sprite_collab
+                    .cached_may_fail(
+                        format!("sprite_credits_txt|{}/{:?}", monster_idx, form_path),
+                        || make_credits_txt(&sprite_base_path),
+                    )
+                    .await
+                    .map(|r| r.map(ZipResponse)),
+                path,
+            )),
             AssetType::PortraitSheet => Some(process_nested_result(
                 sprite_collab
                     .cached_may_fail(
@@ -163,6 +183,15 @@ pub async fn make_sprite_zip(
 
     let buf = zip.finish()?.into_inner();
     Ok(CacheBehaviour::Cache(buf))
+}
+
+pub async fn make_credits_txt(base_path: &Path) -> Result<CacheBehaviour<Vec<u8>>, anyhow::Error> {
+    let credits_path = base_path.join("credits.txt");
+    Ok(CacheBehaviour::Cache(if credits_path.is_file() {
+        fs::read(&credits_path).await?
+    } else {
+        "".as_bytes().to_owned()
+    }))
 }
 
 pub fn process_nested_result<T, E1, E2>(
