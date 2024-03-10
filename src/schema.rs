@@ -96,7 +96,7 @@ impl From<String> for License {
             "CC_BY-NC_4" => License::KnownLicense(KnownLicense {
                 license: KnownLicenseType::CcByNc4,
             }),
-            other => License::Other(OtherLicense { name: value }),
+            _ => License::Other(OtherLicense { name: value }),
         }
     }
 }
