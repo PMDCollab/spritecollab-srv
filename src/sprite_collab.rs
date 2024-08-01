@@ -1,30 +1,32 @@
 //! The actual client implementation for SpriteCollab.
-use crate::cache::{CacheBehaviour, ScCache};
-use crate::datafiles::credit_names::{read_credit_names, CreditNames};
-use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
-use crate::datafiles::tracker::{read_tracker, Tracker};
-use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml, DatafilesReport};
-use crate::reporting::Reporting;
-use crate::{Config, ReportingEvent};
-use anyhow::{anyhow, Error};
-use async_trait::async_trait;
-use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
-use fred::prelude::*;
-use fred::types::RedisKey;
-use git2::build::CheckoutBuilder;
-use git2::{Repository, ResetType};
-use log::{debug, error, info, warn};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::cell::{BorrowError, Ref, RefCell};
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 use std::time::Duration;
+
+use anyhow::{anyhow, Error};
+use async_trait::async_trait;
+use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use fred::prelude::*;
+use fred::types::RedisKey;
+use git2::{Repository, ResetType};
+use git2::build::CheckoutBuilder;
+use log::{debug, error, info, warn};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use tokio::fs::{create_dir_all, remove_dir_all};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
+
+use crate::{Config, ReportingEvent};
+use crate::cache::{CacheBehaviour, ScCache};
+use crate::datafiles::{DatafilesReport, read_and_report_error, try_read_in_anim_data_xml};
+use crate::datafiles::credit_names::{CreditNames, read_credit_names};
+use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
+use crate::datafiles::tracker::{read_tracker, Tracker};
+use crate::reporting::Reporting;
 
 const GIT_REPO_DIR: &str = "spritecollab";
 
@@ -339,8 +341,9 @@ async fn refresh_data_internal_do(
     let commit_time = FixedOffset::east_opt(commit_time_raw.offset_minutes() * 60)
         .unwrap()
         .from_local_datetime(
-            &NaiveDateTime::from_timestamp_opt(commit_time_raw.seconds(), 0)
-                .ok_or_else(|| anyhow!("Invalid Git Commit date."))?,
+            &DateTime::from_timestamp(commit_time_raw.seconds(), 0)
+                .ok_or_else(|| anyhow!("Invalid Git Commit date."))?
+                .naive_utc(),
         )
         .unwrap();
 
