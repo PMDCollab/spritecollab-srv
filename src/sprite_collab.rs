@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use fred::prelude::*;
 use fred::types::RedisKey;
-use git2::{Repository, ResetType};
 use git2::build::CheckoutBuilder;
+use git2::{Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -20,13 +20,13 @@ use tokio::fs::{create_dir_all, remove_dir_all};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use crate::{Config, ReportingEvent};
 use crate::cache::{CacheBehaviour, ScCache};
-use crate::datafiles::{DatafilesReport, read_and_report_error, try_read_in_anim_data_xml};
-use crate::datafiles::credit_names::{CreditNames, read_credit_names};
+use crate::datafiles::credit_names::{read_credit_names, CreditNames};
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
 use crate::datafiles::tracker::{read_tracker, Tracker};
+use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml, DatafilesReport};
 use crate::reporting::Reporting;
+use crate::{Config, ReportingEvent};
 
 const GIT_REPO_DIR: &str = "spritecollab";
 

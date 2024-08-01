@@ -1,5 +1,25 @@
 #![cfg_attr(not(feature = "discord"), allow(unused_variables))]
 
+use std::collections::HashMap;
+use std::env;
+use std::fmt::Debug;
+use std::future::Future;
+use std::iter::once;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use fred::types::RedisKey;
+use itertools::Itertools;
+use juniper::{
+    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
+    GraphQLUnion,
+};
+#[allow(unused_imports)]
+use log::warn;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
 use crate::assets::fs_check::{
     get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
     iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
@@ -15,24 +35,6 @@ use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
 use crate::reporting::Reporting;
 use crate::sprite_collab::SpriteCollab;
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use fred::types::RedisKey;
-use itertools::Itertools;
-use juniper::{
-    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
-    GraphQLUnion,
-};
-#[allow(unused_imports)]
-use log::warn;
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::env;
-use std::fmt::Debug;
-use std::future::Future;
-use std::iter::once;
-use std::sync::Arc;
 
 /// Maximum length for search query strings
 const MAX_QUERY_LEN: usize = 75;
@@ -530,38 +532,30 @@ impl MonsterFormSprites {
         &self,
         action: &str,
         locked: bool,
-        action_copy_map: &HashMap<String, String>,
         this_server_url: &str,
     ) -> SpriteUnion {
-        match action_copy_map.get(action) {
-            Some(copy_of) => SpriteUnion::CopyOf(CopyOf {
-                action: action.to_string(),
-                locked,
-                copy_of: copy_of.to_string(),
-            }),
-            None => SpriteUnion::Sprite(Sprite {
-                anim_url: get_url(
-                    AssetType::SpriteAnim(action),
-                    this_server_url,
-                    self.1,
-                    &self.2,
-                ),
-                offsets_url: get_url(
-                    AssetType::SpriteOffsets(action),
-                    this_server_url,
-                    self.1,
-                    &self.2,
-                ),
-                shadows_url: get_url(
-                    AssetType::SpriteShadows(action),
-                    this_server_url,
-                    self.1,
-                    &self.2,
-                ),
-                action: action.to_string(),
-                locked,
-            }),
-        }
+        SpriteUnion::Sprite(Sprite {
+            anim_url: get_url(
+                AssetType::SpriteAnim(action),
+                this_server_url,
+                self.1,
+                &self.2,
+            ),
+            offsets_url: get_url(
+                AssetType::SpriteOffsets(action),
+                this_server_url,
+                self.1,
+                &self.2,
+            ),
+            shadows_url: get_url(
+                AssetType::SpriteShadows(action),
+                this_server_url,
+                self.1,
+                &self.2,
+            ),
+            action: action.to_string(),
+            locked,
+        })
     }
 
     async fn fetch_xml_and_make_action_map(
@@ -693,20 +687,42 @@ impl MonsterFormSprites {
     async fn actions(&self, context: &Context) -> FieldResult<Vec<SpriteUnion>> {
         if self.sprites_available() {
             let action_copy_map = self.get_action_map(context).await?;
-            Ok(
+            // TODO: needed because of borrow in closure. can this be optimized?
+            let action_copy_map_clone = action_copy_map.clone();
+            let sprites_iter =
                 iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
                     .await?
                     .into_iter()
-                    .map(|(action, locked)| {
-                        self.process_sprite_action(
-                            &action,
-                            locked,
-                            &action_copy_map,
-                            &context.this_server_url,
-                        )
+                    .filter_map(|(action, locked)| {
+                        // Copy ofs shouldn't appear here since they shouldn't have any sheets, but
+                        // if they do, we filter them out, since we explicitly add them below.
+                        if action_copy_map_clone.contains_key(&action) {
+                            None
+                        } else {
+                            Some(self.process_sprite_action(
+                                &action,
+                                locked,
+                                &context.this_server_url,
+                            ))
+                        }
+                    });
+
+            // Add copy ofs
+            let sprites_iter =
+                sprites_iter.chain(action_copy_map.into_iter().map(|(action, copy_of)| {
+                    SpriteUnion::CopyOf(CopyOf {
+                        locked: self
+                            .0
+                            .sprite_files
+                            .get(&action)
+                            .copied()
+                            .unwrap_or_default(),
+                        action,
+                        copy_of: copy_of.to_string(),
                     })
-                    .collect(),
-            )
+                }));
+
+            Ok(sprites_iter.collect())
         } else {
             Ok(vec![])
         }
@@ -716,18 +732,32 @@ impl MonsterFormSprites {
     async fn action(&self, context: &Context, action: String) -> FieldResult<Option<SpriteUnion>> {
         if self.sprites_available() {
             let action_copy_map = self.get_action_map(context).await?;
-            Ok(
-                get_existing_sprite_file(&context, &self.0.sprite_files, &action, self.1, &self.2)
-                    .await?
-                    .map(|locked| {
-                        self.process_sprite_action(
-                            &action,
-                            locked,
-                            &action_copy_map,
-                            &context.this_server_url,
-                        )
-                    }),
-            )
+            if let Some(copy_of) = action_copy_map.get(&action) {
+                // Copy of
+                Ok(Some(SpriteUnion::CopyOf(CopyOf {
+                    locked: self
+                        .0
+                        .sprite_files
+                        .get(&action)
+                        .copied()
+                        .unwrap_or_default(),
+                    action,
+                    copy_of: copy_of.to_string(),
+                })))
+            } else {
+                // Regular sprite
+                Ok(get_existing_sprite_file(
+                    &context,
+                    &self.0.sprite_files,
+                    &action,
+                    self.1,
+                    &self.2,
+                )
+                .await?
+                .map(|locked| {
+                    self.process_sprite_action(&action, locked, &context.this_server_url)
+                }))
+            }
         } else {
             Ok(None)
         }
