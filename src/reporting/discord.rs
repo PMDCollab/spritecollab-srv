@@ -1,8 +1,5 @@
 //! Optional (`discord` feature) Discord status reporting for the server.
 
-use anyhow::anyhow;
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-use log::{info, trace, warn};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::mem::{discriminant, take};
@@ -11,10 +8,11 @@ use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 
-use crate::datafiles::DatafilesReport;
-use crate::reporting::ReportingEvent;
-use crate::Config;
+use anyhow::anyhow;
+use chrono::{DateTime, Duration, Utc};
 use gethostname::gethostname;
+use log::{info, trace, warn};
+use serenity::{async_trait, Error};
 use serenity::client::bridge::gateway::ShardManager;
 use serenity::client::ClientBuilder;
 use serenity::http::CacheHttp;
@@ -22,10 +20,13 @@ use serenity::model::channel::{Channel, GuildChannel};
 use serenity::model::prelude::{Ready, User};
 use serenity::prelude::*;
 use serenity::utils::Colour;
-use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::timeout;
+
+use crate::Config;
+use crate::datafiles::DatafilesReport;
+use crate::reporting::ReportingEvent;
 
 #[derive(Debug, Clone)]
 pub struct ArcedAnyhowError(Arc<anyhow::Error>);
@@ -350,6 +351,7 @@ impl Handler {
 /// Most basic information about a Discord user.
 #[derive(Clone, Debug)]
 pub struct DiscordProfile {
+    #[allow(dead_code)]
     pub id: DiscordId,
     pub name: String,
     pub discriminator: String,
@@ -498,7 +500,7 @@ impl DiscordBot {
         data.insert::<DatafilesFailedLastTypeAndTime>((
             None,
             DateTime::from_naive_utc_and_offset(
-                NaiveDateTime::from_timestamp_opt(0, 0).unwrap(),
+                DateTime::from_timestamp(0, 0).unwrap().naive_utc(),
                 Utc,
             ),
         ));
