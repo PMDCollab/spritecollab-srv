@@ -12,7 +12,6 @@ use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
 use gethostname::gethostname;
 use log::{info, trace, warn};
-use serenity::{async_trait, Error};
 use serenity::client::bridge::gateway::ShardManager;
 use serenity::client::ClientBuilder;
 use serenity::http::CacheHttp;
@@ -20,13 +19,14 @@ use serenity::model::channel::{Channel, GuildChannel};
 use serenity::model::prelude::{Ready, User};
 use serenity::prelude::*;
 use serenity::utils::Colour;
+use serenity::{async_trait, Error};
 use thiserror::Error;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::time::timeout;
 
-use crate::Config;
 use crate::datafiles::DatafilesReport;
 use crate::reporting::ReportingEvent;
+use crate::Config;
 
 #[derive(Debug, Clone)]
 pub struct ArcedAnyhowError(Arc<anyhow::Error>);
