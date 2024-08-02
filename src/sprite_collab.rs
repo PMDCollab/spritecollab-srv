@@ -11,8 +11,8 @@ use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use fred::prelude::*;
 use fred::types::RedisKey;
-use git2::build::CheckoutBuilder;
 use git2::{Repository, ResetType};
+use git2::build::CheckoutBuilder;
 use log::{debug, error, info, warn};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -22,10 +22,10 @@ use tokio::time::timeout;
 
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config;
-use crate::datafiles::credit_names::{read_credit_names, CreditNames};
+use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml};
+use crate::datafiles::credit_names::{CreditNames, read_credit_names};
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
 use crate::datafiles::tracker::{read_tracker, Tracker};
-use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml};
 
 const GIT_REPO_DIR: &str = "spritecollab";
 
@@ -85,7 +85,7 @@ impl SpriteCollab {
         let config = RedisConfig::from_url(&format!("redis://{}:{}", redis_url, redis_port))
             .expect("Invalid Redis config.");
         let policy = ReconnectPolicy::new_linear(10, 10000, 1000);
-        let client = RedisClient::new(config, None, Some(policy));
+        let client = RedisClient::new(config, None, None, Some(policy));
         client.connect();
         client
             .wait_for_connect()
