@@ -1,8 +1,8 @@
 use std::fmt::Formatter;
 use std::ops::Deref;
 
-use serde::{Deserialize, Deserializer};
 use serde::de::{Error, Unexpected, Visitor};
+use serde::{Deserialize, Deserializer};
 
 #[repr(transparent)]
 #[derive(Hash, PartialOrd, Ord, PartialEq, Eq, Debug, Copy, Clone)]

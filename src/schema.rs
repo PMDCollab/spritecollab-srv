@@ -10,19 +10,19 @@ use chrono::{DateTime, Utc};
 use fred::types::RedisKey;
 use itertools::Itertools;
 use juniper::{
-    FieldError, FieldResult, graphql_object, graphql_value, GraphQLEnum, GraphQLObject,
+    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
     GraphQLUnion,
 };
 #[allow(unused_imports)]
 use log::warn;
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::assets::fs_check::{
-    AssetCategory, get_existing_portrait_file, get_existing_sprite_file,
-    get_local_credits_file, iter_existing_portrait_files, iter_existing_sprite_files,
+    get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
+    iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
 };
-use crate::assets::url::{AssetType, get_url};
+use crate::assets::url::{get_url, AssetType};
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
@@ -31,7 +31,7 @@ use crate::datafiles::group_id::GroupId;
 use crate::datafiles::local_credits_file::LocalCreditRow;
 use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
-use crate::datafiles::tracker::{FormMatch, fuzzy_find_tracker, Group, MonsterFormCollector};
+use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
 use crate::sprite_collab::SpriteCollab;
 
 /// Maximum length for search query strings
@@ -1218,14 +1218,6 @@ pub struct Query;
 
 #[graphql_object(Context = Context)]
 impl Query {
-    #[graphql(
-        description = "Version of this API.",
-        deprecated = "Use `meta` instead."
-    )]
-    fn api_version(_context: &Context) -> &str {
-        API_VERSION
-    }
-
     #[graphql(description = "Meta information about the server and state of the assets.")]
     fn meta(_context: &Context) -> Meta {
         Meta
@@ -1259,11 +1251,11 @@ impl Query {
         }
     }
 
-    #[graphql(
-        description = "Retrieve a list of monsters.",
-        arguments(filter(description = "Monster IDs to limit the request to.",))
-    )]
-    fn monster(context: &Context, filter: Option<Vec<i32>>) -> FieldResult<Vec<Monster>> {
+    #[graphql(description = "Retrieve a list of monsters.")]
+    fn monster(
+        context: &Context,
+        #[graphql(description = "Monster IDs to limit the request to.")] filter: Option<Vec<i32>>,
+    ) -> FieldResult<Vec<Monster>> {
         Ok(context
             .collab
             .data()
@@ -1309,12 +1301,7 @@ impl Query {
         }
     }
 
-    #[graphql(
-        description = "Retrieve a list of credits.",
-        arguments(filter(
-            description = "Credit IDs (Discord ID or absentee ID) to limit the request to.",
-        ))
-    )]
+    #[graphql(description = "Retrieve a list of credits.")]
     fn credit(context: &Context) -> FieldResult<Vec<Credit>> {
         Ok(context
             .collab

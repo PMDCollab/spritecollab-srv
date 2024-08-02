@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
-use crate::datafiles::DataReadResult;
 use crate::datafiles::group_id::GroupId;
+use crate::datafiles::DataReadResult;
 use crate::search::fuzzy_find;
 
 pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
