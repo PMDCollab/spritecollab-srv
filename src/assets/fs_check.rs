@@ -8,10 +8,10 @@ use std::sync::Arc;
 use crate::assets::util::join_monster_and_form;
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
-use crate::Config;
-use crate::datafiles::{DataReadError, DataReadResult};
 use crate::datafiles::local_credits_file::{get_credits, LocalCreditRow};
 use crate::datafiles::tracker::MapImpl;
+use crate::datafiles::{DataReadError, DataReadResult};
+use crate::Config;
 
 #[derive(Clone, Copy, Debug)]
 pub enum AssetCategory {

@@ -10,19 +10,19 @@ use chrono::{DateTime, Utc};
 use fred::types::RedisKey;
 use itertools::Itertools;
 use juniper::{
-    FieldError, FieldResult, graphql_object, graphql_value, GraphQLEnum, GraphQLObject,
+    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
     GraphQLUnion,
 };
 #[allow(unused_imports)]
 use log::warn;
-use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 use crate::assets::fs_check::{
-    AssetCategory, get_existing_portrait_file, get_existing_sprite_file,
-    get_local_credits_file, iter_existing_portrait_files, iter_existing_sprite_files,
+    get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
+    iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
 };
-use crate::assets::url::{AssetType, get_url};
+use crate::assets::url::{get_url, AssetType};
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
@@ -32,7 +32,7 @@ use crate::datafiles::local_credits_file::LocalCreditRow;
 use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{
-    FormMatch, fuzzy_find_tracker, Group, MapImpl, MonsterFormCollector,
+    fuzzy_find_tracker, FormMatch, Group, MapImpl, MonsterFormCollector,
 };
 use crate::sprite_collab::SpriteCollab;
 
