@@ -1,9 +1,10 @@
-use image::{Rgba, RgbaImage};
 use std::io::Cursor;
+
+use image::{Rgba, RgbaImage};
 
 pub fn to_png(img: RgbaImage) -> Result<Vec<u8>, anyhow::Error> {
     let mut png = Vec::new();
-    img.write_to(&mut Cursor::new(&mut png), image::ImageOutputFormat::Png)?;
+    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
     Ok(png)
 }
 

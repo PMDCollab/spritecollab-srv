@@ -34,6 +34,6 @@ fuzzy-matcher = "0.3"
 itertools = "0.13"
 async-trait = "0.1"
 num-traits = "0.2"
-zip = { version = "0.6", features = ["deflate"] }
-image = "0.24"
+zip = { version = "2.1", features = ["deflate"] }
+image = "0.25"
 indexmap = "2.0"
