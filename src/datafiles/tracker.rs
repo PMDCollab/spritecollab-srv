@@ -1,17 +1,18 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::BufReader;
 use std::iter::Peekable;
 use std::path::Path;
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use indexmap::IndexMap;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
-use crate::datafiles::group_id::GroupId;
 use crate::datafiles::DataReadResult;
+use crate::datafiles::group_id::GroupId;
 use crate::search::fuzzy_find;
 
 pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
@@ -19,7 +20,8 @@ pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
     Ok(serde_json::from_reader(BufReader::new(input))?)
 }
 
-pub type Tracker = HashMap<GroupId, Group>;
+pub type MapImpl<K, V> = IndexMap<K, V>;
+pub type Tracker = MapImpl<GroupId, Group>;
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 pub struct Credit {
@@ -33,27 +35,27 @@ pub struct Group {
     pub canon: bool,
     pub modreward: bool,
     pub name: String,
-    pub portrait_bounty: HashMap<i64, i64>,
+    pub portrait_bounty: MapImpl<i64, i64>,
     pub portrait_complete: i64,
     pub portrait_credit: Credit,
-    pub portrait_files: HashMap<String, bool>,
+    pub portrait_files: MapImpl<String, bool>,
     pub portrait_link: String,
     #[serde(deserialize_with = "parse_datetime")]
     pub portrait_modified: Option<DateTime<Utc>>,
     pub portrait_pending: Value,
     pub portrait_recolor_link: String,
     pub portrait_required: bool,
-    pub sprite_bounty: HashMap<i64, i64>,
+    pub sprite_bounty: MapImpl<i64, i64>,
     pub sprite_complete: i64,
     pub sprite_credit: Credit,
-    pub sprite_files: HashMap<String, bool>,
+    pub sprite_files: MapImpl<String, bool>,
     pub sprite_link: String,
     #[serde(deserialize_with = "parse_datetime")]
     pub sprite_modified: Option<DateTime<Utc>>,
     pub sprite_pending: Value,
     pub sprite_recolor_link: String,
     pub sprite_required: bool,
-    pub subgroups: HashMap<GroupId, Group>,
+    pub subgroups: MapImpl<GroupId, Group>,
 }
 
 fn parse_datetime<'de, D>(deser: D) -> Result<Option<DateTime<Utc>>, D::Error>
@@ -81,9 +83,9 @@ where
     C: ScCache<Error = E>,
     F: Fn(i64) -> T,
 {
-    let index: HashMap<String, Vec<i64>> = cache
+    let index: MapImpl<String, Vec<i64>> = cache
         .cached("fuzzy_find_tracker", || async {
-            let mut names: HashMap<String, Vec<i64>> = HashMap::with_capacity(tracker.len() * 10);
+            let mut names: MapImpl<String, Vec<i64>> = MapImpl::with_capacity(tracker.len() * 10);
             for (monster_idx, monster) in tracker.iter() {
                 fft_insert(&mut names, **monster_idx, &monster.name);
                 fft_recurse(&mut names, **monster_idx, &monster.subgroups);
@@ -96,7 +98,7 @@ where
         .collect())
 }
 
-fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &str) {
+fn fft_insert(names: &mut MapImpl<String, Vec<i64>>, monster_idx: i64, name: &str) {
     names
         .entry(name.to_lowercase())
         .or_default()
@@ -104,9 +106,9 @@ fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &st
 }
 
 fn fft_recurse(
-    names: &mut HashMap<String, Vec<i64>>,
+    names: &mut MapImpl<String, Vec<i64>>,
     monster_idx: i64,
-    subgroups: &HashMap<GroupId, Group>,
+    subgroups: &MapImpl<GroupId, Group>,
 ) {
     for grp in subgroups.values() {
         fft_insert(names, monster_idx, &grp.name);

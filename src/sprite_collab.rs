@@ -1,5 +1,7 @@
 //! The actual client implementation for SpriteCollab.
 use std::cell::{BorrowError, Ref, RefCell};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -24,8 +26,9 @@ use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config;
 use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml};
 use crate::datafiles::credit_names::{CreditNames, read_credit_names};
+use crate::datafiles::group_id::GroupId;
 use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
-use crate::datafiles::tracker::{read_tracker, Tracker};
+use crate::datafiles::tracker::{Group, MapImpl, read_tracker, Tracker};
 
 const GIT_REPO_DIR: &str = "spritecollab";
 
@@ -45,13 +48,49 @@ pub struct SpriteCollabData {
 impl SpriteCollabData {
     fn new(
         sprite_config: SpriteConfig,
-        tracker: Tracker,
+        mut tracker: Tracker,
         credit_names: CreditNames,
     ) -> SpriteCollabData {
+        Self::sort_tracker_by_sprite_config(&mut tracker, &sprite_config);
         Self {
             sprite_config,
             tracker: Arc::new(tracker),
             credit_names,
+        }
+    }
+}
+
+impl SpriteCollabData {
+    fn sort_tracker_by_sprite_config(
+        tracker: &mut MapImpl<GroupId, Group>,
+        sprite_config: &SpriteConfig,
+    ) {
+        let mut action_indices = BTreeMap::new();
+        for (i, action) in sprite_config.actions.iter().enumerate() {
+            action_indices.insert(action, i);
+        }
+        let mut emotion_indices = BTreeMap::new();
+        for (i, emotion) in sprite_config.emotions.iter().enumerate() {
+            emotion_indices.insert(emotion, i);
+        }
+        for group in tracker.values_mut() {
+            group.sprite_files.sort_by(|k1, _, k2, _| {
+                match (action_indices.get(k1), action_indices.get(k2)) {
+                    (Some(i1), Some(i2)) => i1.cmp(i2),
+                    (None, Some(_)) => Ordering::Greater,
+                    (Some(_), None) => Ordering::Less,
+                    _ => k1.cmp(k2),
+                }
+            });
+            group.portrait_files.sort_by(|k1, _, k2, _| {
+                match (emotion_indices.get(k1), emotion_indices.get(k2)) {
+                    (Some(i1), Some(i2)) => i1.cmp(i2),
+                    (None, Some(_)) => Ordering::Greater,
+                    (Some(_), None) => Ordering::Less,
+                    _ => k1.cmp(k2),
+                }
+            });
+            Self::sort_tracker_by_sprite_config(&mut group.subgroups, sprite_config);
         }
     }
 }

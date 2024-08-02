@@ -10,19 +10,19 @@ use chrono::{DateTime, Utc};
 use fred::types::RedisKey;
 use itertools::Itertools;
 use juniper::{
-    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
+    FieldError, FieldResult, graphql_object, graphql_value, GraphQLEnum, GraphQLObject,
     GraphQLUnion,
 };
 #[allow(unused_imports)]
 use log::warn;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
 
 use crate::assets::fs_check::{
-    get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
-    iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
+    AssetCategory, get_existing_portrait_file, get_existing_sprite_file,
+    get_local_credits_file, iter_existing_portrait_files, iter_existing_sprite_files,
 };
-use crate::assets::url::{get_url, AssetType};
+use crate::assets::url::{AssetType, get_url};
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
@@ -31,7 +31,9 @@ use crate::datafiles::group_id::GroupId;
 use crate::datafiles::local_credits_file::LocalCreditRow;
 use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
-use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
+use crate::datafiles::tracker::{
+    FormMatch, fuzzy_find_tracker, Group, MapImpl, MonsterFormCollector,
+};
 use crate::sprite_collab::SpriteCollab;
 
 /// Maximum length for search query strings
@@ -271,7 +273,7 @@ pub struct MonsterBounty {
 }
 
 impl MonsterBounty {
-    pub fn new(modreward: bool, bounty_spec: &HashMap<i64, i64>) -> Self {
+    pub fn new(modreward: bool, bounty_spec: &MapImpl<i64, i64>) -> Self {
         Self {
             modreward,
             incomplete: bounty_spec
@@ -526,13 +528,8 @@ impl MonsterFormPortraits {
 pub struct MonsterFormSprites(Arc<Group>, i32, Vec<i32>);
 
 impl MonsterFormSprites {
-    fn process_sprite_action(
-        &self,
-        action: &str,
-        locked: bool,
-        this_server_url: &str,
-    ) -> SpriteUnion {
-        SpriteUnion::Sprite(Sprite {
+    fn process_sprite_action(&self, action: &str, locked: bool, this_server_url: &str) -> Sprite {
+        Sprite {
             anim_url: get_url(
                 AssetType::SpriteAnim(action),
                 this_server_url,
@@ -553,7 +550,7 @@ impl MonsterFormSprites {
             ),
             action: action.to_string(),
             locked,
-        })
+        }
     }
 
     async fn fetch_xml_and_make_action_map(
@@ -687,7 +684,7 @@ impl MonsterFormSprites {
             let action_copy_map = self.get_action_map(context).await?;
             // TODO: needed because of borrow in closure. can this be optimized?
             let action_copy_map_clone = action_copy_map.clone();
-            let sprites_iter =
+            let mut normal_sprites: HashMap<String, Sprite> =
                 iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
                     .await?
                     .into_iter()
@@ -697,28 +694,46 @@ impl MonsterFormSprites {
                         if action_copy_map_clone.contains_key(&action) {
                             None
                         } else {
-                            Some(self.process_sprite_action(
-                                &action,
-                                locked,
-                                &context.this_server_url,
+                            let action_clone = action.clone();
+                            Some((
+                                action,
+                                self.process_sprite_action(
+                                    &action_clone,
+                                    locked,
+                                    &context.this_server_url,
+                                ),
                             ))
                         }
-                    });
-
-            // Add copy ofs
-            let sprites_iter =
-                sprites_iter.chain(action_copy_map.into_iter().map(|(action, copy_of)| {
-                    SpriteUnion::CopyOf(CopyOf {
-                        locked: self
-                            .0
-                            .sprite_files
-                            .get(&action)
-                            .copied()
-                            .unwrap_or_default(),
-                        action,
-                        copy_of: copy_of.to_string(),
                     })
-                }));
+                    .collect();
+
+            let mut copy_of_sprites: HashMap<String, CopyOf> = action_copy_map
+                .into_iter()
+                .map(|(action, copy_of)| {
+                    let action_clone = action.clone();
+                    (
+                        action,
+                        CopyOf {
+                            locked: self
+                                .0
+                                .sprite_files
+                                .get(&action_clone)
+                                .copied()
+                                .unwrap_or_default(),
+                            action: action_clone,
+                            copy_of: copy_of.to_string(),
+                        },
+                    )
+                })
+                .collect();
+
+            let sprites_iter = self.0.sprite_files.keys().filter_map(|k| {
+                if let Some(sprite) = normal_sprites.remove(k) {
+                    Some(SpriteUnion::Sprite(sprite))
+                } else {
+                    copy_of_sprites.remove(k).map(SpriteUnion::CopyOf)
+                }
+            });
 
             Ok(sprites_iter.collect())
         } else {
@@ -753,7 +768,11 @@ impl MonsterFormSprites {
                 )
                 .await?
                 .map(|locked| {
-                    self.process_sprite_action(&action, locked, &context.this_server_url)
+                    SpriteUnion::Sprite(self.process_sprite_action(
+                        &action,
+                        locked,
+                        &context.this_server_url,
+                    ))
                 }))
             }
         } else {
