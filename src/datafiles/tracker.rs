@@ -1,22 +1,25 @@
-use crate::cache::CacheBehaviour;
-use crate::cache::ScCache;
-use crate::datafiles::DataReadResult;
-use crate::search::fuzzy_find;
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
-use serde::{Deserialize, Deserializer};
-use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::fs::File;
 use std::io::BufReader;
 use std::iter::Peekable;
 use std::path::Path;
 
+use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value;
+
+use crate::cache::CacheBehaviour;
+use crate::cache::ScCache;
+use crate::datafiles::DataReadResult;
+use crate::datafiles::group_id::GroupId;
+use crate::search::fuzzy_find;
+
 pub async fn read_tracker<P: AsRef<Path>>(path: P) -> DataReadResult<Tracker> {
     let input = File::open(path)?;
     Ok(serde_json::from_reader(BufReader::new(input))?)
 }
 
-pub type Tracker = HashMap<i64, Group>;
+pub type Tracker = HashMap<GroupId, Group>;
 
 #[derive(Debug, Deserialize, Clone, Eq, PartialEq)]
 pub struct Credit {
@@ -50,7 +53,7 @@ pub struct Group {
     pub sprite_pending: Value,
     pub sprite_recolor_link: String,
     pub sprite_required: bool,
-    pub subgroups: HashMap<i64, Group>,
+    pub subgroups: HashMap<GroupId, Group>,
 }
 
 fn parse_datetime<'de, D>(deser: D) -> Result<Option<DateTime<Utc>>, D::Error>
@@ -82,8 +85,8 @@ where
         .cached("fuzzy_find_tracker", || async {
             let mut names: HashMap<String, Vec<i64>> = HashMap::with_capacity(tracker.len() * 10);
             for (monster_idx, monster) in tracker.iter() {
-                fft_insert(&mut names, *monster_idx, &monster.name);
-                fft_recurse(&mut names, *monster_idx, &monster.subgroups);
+                fft_insert(&mut names, **monster_idx, &monster.name);
+                fft_recurse(&mut names, **monster_idx, &monster.subgroups);
             }
             CacheBehaviour::Cache(names)
         })
@@ -103,7 +106,7 @@ fn fft_insert(names: &mut HashMap<String, Vec<i64>>, monster_idx: i64, name: &st
 fn fft_recurse(
     names: &mut HashMap<String, Vec<i64>>,
     monster_idx: i64,
-    subgroups: &HashMap<i64, Group>,
+    subgroups: &HashMap<GroupId, Group>,
 ) {
     for grp in subgroups.values() {
         fft_insert(names, monster_idx, &grp.name);
@@ -158,7 +161,9 @@ pub struct MonsterFormCollector<'a>(&'a Group);
 
 impl<'a> MonsterFormCollector<'a> {
     pub fn collect(tracker: &'a Tracker, monster_idx: i32) -> Option<MonsterFormCollector> {
-        tracker.get(&(monster_idx as i64)).map(MonsterFormCollector)
+        tracker
+            .get(&GroupId(monster_idx as i64))
+            .map(MonsterFormCollector)
     }
 
     pub fn is_female<'b, P>(form: P) -> bool
@@ -234,7 +239,7 @@ impl<'a> MonsterFormCollector<'a> {
                     Some(_) => {
                         // We will still have a path to process after this; we are not at the leaf yet.
                         // Try to find the group.
-                        let sub_group = current_group.subgroups.get(&(current as i64));
+                        let sub_group = current_group.subgroups.get(&GroupId(current as i64));
                         match sub_group {
                             Some(sub_group) => {
                                 // Return the sub-group.
@@ -252,7 +257,7 @@ impl<'a> MonsterFormCollector<'a> {
                             // We have no more forms to check and are group 0 so look on (relative) root level
                             Some((collected, collected_names, current_group))
                         } else {
-                            let sub_group = current_group.subgroups.get(&(current as i64));
+                            let sub_group = current_group.subgroups.get(&GroupId(current as i64));
                             match sub_group {
                                 Some(sub_group) => {
                                     // Return the sub-group.
@@ -341,7 +346,7 @@ where
     ) {
         for (subidx, subgroup) in &root.subgroups {
             let mut subpath = path_to_root.to_vec();
-            subpath.push(*subidx as i32);
+            subpath.push(**subidx as i32);
             let mut subpath_names = names_to_root.to_vec();
             if !subgroup.name.is_empty() {
                 subpath_names.push(subgroup.name.clone());

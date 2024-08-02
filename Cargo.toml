@@ -6,9 +6,6 @@ license = "GPL-3.0-or-later"
 version = "0.5.1"
 edition = "2021"
 
-[features]
-discord = ["serenity", "gethostname"]
-
 [dependencies]
 log = "0.4"
 pretty_env_logger = "0.5"
@@ -20,8 +17,7 @@ juniper_hyper = "0.8"
 tokio = { version = "1.18", features = ["full"] }
 route-recognizer = "0.3"
 serde = { version = "1.0", features = ["derive"] }
-# BUG: https://github.com/serde-rs/json/issues/1077
-serde_json = "=1.0.122"
+serde_json = "1"
 serde-xml-rs = "0.6"
 csv = "1.1"
 fred = { version = "6.3", default-features = false }
@@ -39,15 +35,3 @@ num-traits = "0.2"
 zip = { version = "0.6", features = ["deflate"] }
 image = "0.24"
 indexmap = "2.0"
-gethostname = { version = "0.4", optional = true }
-serenity = { version = "0.11", optional = true, default-features = false, features = [
-    "builder",
-    "cache",
-    "chrono",
-    "client",
-    "gateway",
-    "model",
-    "http",
-    "rustls_backend",
-    "utils",
-] }

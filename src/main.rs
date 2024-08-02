@@ -3,44 +3,42 @@
 //! Access `/ for GraphiQL.
 #![forbid(unused_must_use)]
 
-mod assets;
-mod cache;
-mod config;
-mod datafiles;
-mod reporting;
-mod scheduler;
-mod schema;
-mod search;
-mod sprite_collab;
-
+use std::{convert::Infallible, sync::Arc};
 use std::mem::take;
 use std::net::SocketAddr;
 use std::ops::DerefMut;
-use std::panic::{set_hook, PanicInfo};
+use std::panic::{PanicInfo, set_hook};
 use std::sync::{Mutex, MutexGuard};
-use std::time::Duration;
-use std::{convert::Infallible, sync::Arc, thread};
 
-use crate::assets::match_and_process_assets_path;
-use crate::config::Config;
-use crate::reporting::{init_reporting, Reporting, ReportingEvent, ReportingJoinHandle};
-use crate::scheduler::DataRefreshScheduler;
-use crate::schema::{Context, Query};
-use crate::sprite_collab::SpriteCollab;
 use backtrace::Backtrace;
+use hyper::{
+    Body,
+    Method,
+    Response, server::Server, service::{make_service_fn, service_fn}, StatusCode,
+};
 use hyper::body::Bytes;
 use hyper::http::HeaderValue;
-use hyper::{
-    server::Server,
-    service::{make_service_fn, service_fn},
-    Body, Method, Response, StatusCode,
-};
-use juniper::futures::StreamExt;
 use juniper::{EmptyMutation, EmptySubscription, RootNode};
+use juniper::futures::StreamExt;
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use tokio::runtime::Handle;
 use tokio::task;
+
+use crate::assets::match_and_process_assets_path;
+use crate::config::Config;
+use crate::scheduler::DataRefreshScheduler;
+use crate::schema::{Context, Query};
+use crate::sprite_collab::SpriteCollab;
+
+mod assets;
+mod cache;
+mod config;
+mod datafiles;
+mod scheduler;
+mod schema;
+mod search;
+mod sprite_collab;
 
 const PORT: u16 = 3000;
 
@@ -50,21 +48,16 @@ async fn main() {
     Config::check();
     pretty_env_logger::init_timed();
 
-    let (reporting, reporting_join_handle) = init_reporting().await;
-    reporting.send_event(ReportingEvent::Start).await;
-    GlobalShutdown::register_panic_hook(reporting.clone(), reporting_join_handle);
+    GlobalShutdown::register_panic_hook();
 
-    let sprite_collab = SpriteCollab::new(Config::redis_config(), reporting.clone()).await;
-
-    #[cfg(feature = "discord")]
-    sprite_collab.pre_warm_discord().await;
+    let sprite_collab = SpriteCollab::new(Config::redis_config()).await;
 
     let scheduler = Arc::new(Mutex::new(DataRefreshScheduler::new(sprite_collab.clone())));
     GlobalShutdown::add_scheduler(scheduler.clone());
 
     let addr: SocketAddr = ([0, 0, 0, 0], PORT).into();
 
-    let ctx = Arc::new(Context::new(sprite_collab.clone(), reporting.clone()));
+    let ctx = Arc::new(Context::new(sprite_collab.clone()));
     let root_node = Arc::new(RootNode::new(
         Query,
         EmptyMutation::<Context>::new(),
@@ -176,10 +169,7 @@ async fn shutdown_signal() {
 }
 
 #[derive(Default)]
-struct GlobalShutdown(
-    Option<(Arc<Reporting>, ReportingJoinHandle)>,
-    Option<Arc<Mutex<DataRefreshScheduler>>>,
-);
+struct GlobalShutdown(Option<Arc<Mutex<DataRefreshScheduler>>>);
 
 static mut GLOBAL_SHUTDOWN: OnceCell<Mutex<GlobalShutdown>> = OnceCell::new();
 
@@ -192,27 +182,18 @@ impl GlobalShutdown {
         }
 
         let slf = take(slf.deref_mut());
-        let (reporting, reporting_join_handle) = slf.0.unwrap();
 
-        reporting.send_event(ReportingEvent::Shutdown).await;
-
-        // give everything a bit of time to send reports.
-        thread::sleep(Duration::new(3, 0));
-
-        if let Some(scheduler) = slf.1 {
+        if let Some(scheduler) = slf.0 {
             scheduler.lock().unwrap().shutdown();
         }
-        reporting.shutdown().await;
-        reporting_join_handle.join();
     }
 
-    fn register_panic_hook(reporting: Arc<Reporting>, join_handle: ReportingJoinHandle) {
-        Self::slf().0 = Some((reporting, join_handle));
+    fn register_panic_hook() {
         set_hook(Box::new(Self::panic));
     }
 
     fn add_scheduler(scheduler: Arc<Mutex<DataRefreshScheduler>>) {
-        Self::slf().1 = Some(scheduler);
+        Self::slf().0 = Some(scheduler);
     }
 
     fn panic(info: &PanicInfo) {
@@ -225,7 +206,7 @@ impl GlobalShutdown {
     }
 
     fn slf<'a>() -> MutexGuard<'a, GlobalShutdown> {
-        unsafe { GLOBAL_SHUTDOWN.get_or_init(|| Mutex::new(GlobalShutdown(None, None))) }
+        unsafe { GLOBAL_SHUTDOWN.get_or_init(|| Mutex::new(GlobalShutdown(None))) }
             .lock()
             .unwrap()
     }
