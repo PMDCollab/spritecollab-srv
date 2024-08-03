@@ -1,3 +1,18 @@
+use std::error::Error;
+use std::fmt::Debug;
+use std::io::{Cursor, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Full};
+use hyper::body::{Body, Bytes};
+use hyper::http::HeaderValue;
+use hyper::{Method, Response, StatusCode};
+use log::warn;
+use tokio::fs;
+use zip::ZipWriter;
+
 use crate::assets::portrait_sheets::{
     make_portrait_recolor_sheet, make_portrait_sheet, PortraitSheetEmotions,
 };
@@ -8,15 +23,6 @@ use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
 use crate::datafiles::tracker::{FormMatch, MonsterFormCollector};
 use crate::{Config, SpriteCollab};
-use hyper::http::HeaderValue;
-use hyper::{Body, Method, Response, StatusCode};
-use log::warn;
-use std::fmt::Debug;
-use std::io::{Cursor, Write};
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tokio::fs;
-use zip::ZipWriter;
 
 pub mod fs_check;
 mod img_util;
@@ -25,11 +31,24 @@ mod sprite_sheets;
 pub mod url;
 pub mod util;
 
+pub type AssetBody = BoxBody<Bytes, Box<dyn Error + Send + Sync + 'static>>;
+
+pub fn make_box_body<B, E>(body: B) -> AssetBody
+where
+    B: Body<Data = Bytes, Error = E> + Send + Sync + 'static,
+    E: Error + Send + Sync + 'static,
+{
+    BoxBody::new(body.map_err(|e| {
+        let b: Box<dyn Error + Send + Sync + 'static> = Box::new(e);
+        b
+    }))
+}
+
 pub async fn match_and_process_assets_path(
     method: &Method,
     path: &str,
     sprite_collab: Arc<SpriteCollab>,
-) -> Option<Response<Body>> {
+) -> Option<Response<AssetBody>> {
     if method != Method::GET {
         return None;
     }
@@ -85,7 +104,7 @@ pub async fn match_and_process_assets_path(
                         || make_credits_txt(&portrait_base_path),
                     )
                     .await
-                    .map(|r| r.map(ZipResponse)),
+                    .map(|r| r.map(make_box_body).map(Response::new)),
                 path,
             )),
             AssetType::SpriteCreditsTxt => Some(process_nested_result(
@@ -95,7 +114,7 @@ pub async fn match_and_process_assets_path(
                         || make_credits_txt(&sprite_base_path),
                     )
                     .await
-                    .map(|r| r.map(ZipResponse)),
+                    .map(|r| r.map(make_box_body).map(Response::new)),
                 path,
             )),
             AssetType::PortraitSheet => Some(process_nested_result(
@@ -112,7 +131,12 @@ pub async fn match_and_process_assets_path(
                         },
                     )
                     .await
-                    .map(|r| r.map(PngResponse)),
+                    .map(|r| {
+                        r.map(Bytes::from)
+                            .map(Full::new)
+                            .map(make_box_body)
+                            .map(PngResponse)
+                    }),
                 path,
             )),
             AssetType::PortraitRecolorSheet => Some(process_nested_result(
@@ -129,7 +153,12 @@ pub async fn match_and_process_assets_path(
                         },
                     )
                     .await
-                    .map(|r| r.map(PngResponse)),
+                    .map(|r| {
+                        r.map(Bytes::from)
+                            .map(Full::new)
+                            .map(make_box_body)
+                            .map(PngResponse)
+                    }),
                 path,
             )),
             AssetType::SpriteZip => Some(process_nested_result(
@@ -139,7 +168,12 @@ pub async fn match_and_process_assets_path(
                         || make_sprite_zip(&sprite_base_path),
                     )
                     .await
-                    .map(|r| r.map(ZipResponse)),
+                    .map(|r| {
+                        r.map(Bytes::from)
+                            .map(Full::new)
+                            .map(make_box_body)
+                            .map(ZipResponse)
+                    }),
                 path,
             )),
             AssetType::SpriteRecolorSheet => Some(process_nested_result(
@@ -149,7 +183,12 @@ pub async fn match_and_process_assets_path(
                         || make_sprite_recolor_sheet(&sprite_base_path),
                     )
                     .await
-                    .map(|r| r.map(PngResponse)),
+                    .map(|r| {
+                        r.map(Bytes::from)
+                            .map(Full::new)
+                            .map(make_box_body)
+                            .map(PngResponse)
+                    }),
                 path,
             )),
             _ => None,
@@ -165,8 +204,8 @@ pub async fn make_sprite_zip(
     let buf = Vec::with_capacity(50000000);
     let mut zip = ZipWriter::new(Cursor::new(buf));
 
-    let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
 
     let mut paths = fs::read_dir(sprite_base_path).await?;
 
@@ -185,21 +224,21 @@ pub async fn make_sprite_zip(
     Ok(CacheBehaviour::Cache(buf))
 }
 
-pub async fn make_credits_txt(base_path: &Path) -> Result<CacheBehaviour<Vec<u8>>, anyhow::Error> {
+pub async fn make_credits_txt(base_path: &Path) -> Result<CacheBehaviour<String>, anyhow::Error> {
     let credits_path = base_path.join("credits.txt");
     Ok(CacheBehaviour::Cache(if credits_path.is_file() {
-        fs::read(&credits_path).await?
+        fs::read_to_string(&credits_path).await?
     } else {
-        "".as_bytes().to_owned()
+        "".to_owned()
     }))
 }
 
 pub fn process_nested_result<T, E1, E2>(
     result: Result<Result<T, E1>, E2>,
     request_path: &str,
-) -> Response<Body>
+) -> Response<AssetBody>
 where
-    T: TryInto<Response<Body>>,
+    T: TryInto<Response<AssetBody>>,
     T::Error: Debug,
     E1: Debug,
     E2: Debug,
@@ -207,36 +246,36 @@ where
     match result {
         Ok(Ok(t)) => match t.try_into() {
             Ok(success_reponse) => success_reponse,
-            Err(e) => make_err_response(e, request_path),
+            Err(e) => make_err_response(e, request_path).map(make_box_body),
         },
-        Ok(Err(e)) => make_err_response(e, request_path),
-        Err(e) => make_err_response(e, request_path),
+        Ok(Err(e)) => make_err_response(e, request_path).map(make_box_body),
+        Err(e) => make_err_response(e, request_path).map(make_box_body),
     }
 }
 
-pub fn make_err_response<E: Debug>(err: E, request_path: &str) -> Response<Body> {
+pub fn make_err_response<E: Debug>(err: E, request_path: &str) -> Response<String> {
     warn!("Error processing asset at '{}': {:?}", request_path, err);
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
         .header("Content-Type", "text/html; charset=utf-8")
-        .body(Body::from(
+        .body(
             format!(
                 "<html><body><h1>Internal Server Error</h1><pre>{:?}</pre><br><img src=\"https://http.cat/500\"></body></html>",
                 err
             )
-        ))
-        .unwrap_or_else(|_| Response::new(Body::from(
+        )
+        .unwrap_or_else(|_| Response::new(String::from(
             "<html><body><h1>Internal Server Error</h1><img src=\"https://http.cat/500\"></body></html>"
         )))
 }
 
-struct ZipResponse(Vec<u8>);
+struct ZipResponse(AssetBody);
 
-impl TryInto<Response<Body>> for ZipResponse {
+impl TryInto<Response<AssetBody>> for ZipResponse {
     type Error = anyhow::Error;
 
-    fn try_into(self) -> Result<Response<Body>, Self::Error> {
-        let mut resp = Response::new(Body::from(self.0));
+    fn try_into(self) -> Result<Response<AssetBody>, Self::Error> {
+        let mut resp = Response::new(self.0);
         let headers = resp.headers_mut();
         headers.insert("Content-Type", HeaderValue::from_str("application/zip")?);
         headers.insert(
@@ -247,13 +286,13 @@ impl TryInto<Response<Body>> for ZipResponse {
     }
 }
 
-struct PngResponse(Vec<u8>);
+struct PngResponse(AssetBody);
 
-impl TryInto<Response<Body>> for PngResponse {
+impl TryInto<Response<AssetBody>> for PngResponse {
     type Error = anyhow::Error;
 
-    fn try_into(self) -> Result<Response<Body>, Self::Error> {
-        let mut resp = Response::new(Body::from(self.0));
+    fn try_into(self) -> Result<Response<AssetBody>, Self::Error> {
+        let mut resp = Response::new(self.0);
         let headers = resp.headers_mut();
         headers.insert("Content-Type", HeaderValue::from_str("image/png")?);
         Ok(resp)

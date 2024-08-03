@@ -1,16 +1,17 @@
 //! This module double checks if sprite and portrait files actually exist.
 
+use std::borrow::Cow;
+use std::fmt::{Display, Formatter};
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use crate::assets::util::join_monster_and_form;
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
 use crate::datafiles::local_credits_file::{get_credits, LocalCreditRow};
+use crate::datafiles::tracker::MapImpl;
 use crate::datafiles::{DataReadError, DataReadResult};
 use crate::Config;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
-use std::path::PathBuf;
-use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug)]
 pub enum AssetCategory {
@@ -115,7 +116,7 @@ impl FileLookupCache {
 
 pub async fn iter_existing_sprite_files<C: ScCache + Send + Sync>(
     cache: &C,
-    sprite_files: &HashMap<String, bool>,
+    sprite_files: &MapImpl<String, bool>,
     monster_idx: i32,
     form_path: &[i32],
 ) -> Result<impl IntoIterator<Item = (String, bool)>, C::Error> {
@@ -132,7 +133,7 @@ pub async fn iter_existing_sprite_files<C: ScCache + Send + Sync>(
 
 pub async fn get_existing_sprite_file<C: ScCache + Send + Sync>(
     cache: &C,
-    sprite_files: &HashMap<String, bool>,
+    sprite_files: &MapImpl<String, bool>,
     action: &str,
     monster_idx: i32,
     form_path: &[i32],
@@ -149,7 +150,7 @@ pub async fn get_existing_sprite_file<C: ScCache + Send + Sync>(
 
 pub async fn iter_existing_portrait_files<C: ScCache + Send + Sync>(
     cache: &C,
-    portrait_files: &HashMap<String, bool>,
+    portrait_files: &MapImpl<String, bool>,
     flipped: bool,
     monster_idx: i32,
     form_path: &[i32],
@@ -174,7 +175,7 @@ pub async fn iter_existing_portrait_files<C: ScCache + Send + Sync>(
 
 pub async fn get_existing_portrait_file<C: ScCache + Send + Sync>(
     cache: &C,
-    portrait_files: &HashMap<String, bool>,
+    portrait_files: &MapImpl<String, bool>,
     emotion: &str,
     flipped: bool,
     monster_idx: i32,

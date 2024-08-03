@@ -1,5 +1,3 @@
-#![cfg_attr(not(feature = "discord"), allow(unused_variables))]
-
 use std::collections::HashMap;
 use std::env;
 use std::fmt::Debug;
@@ -29,11 +27,13 @@ use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
 use crate::datafiles::credit_names::CreditNamesRow;
+use crate::datafiles::group_id::GroupId;
 use crate::datafiles::local_credits_file::LocalCreditRow;
 use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
-use crate::datafiles::tracker::{fuzzy_find_tracker, FormMatch, Group, MonsterFormCollector};
-use crate::reporting::Reporting;
+use crate::datafiles::tracker::{
+    fuzzy_find_tracker, FormMatch, Group, MapImpl, MonsterFormCollector,
+};
 use crate::sprite_collab::SpriteCollab;
 
 /// Maximum length for search query strings
@@ -273,7 +273,7 @@ pub struct MonsterBounty {
 }
 
 impl MonsterBounty {
-    pub fn new(modreward: bool, bounty_spec: &HashMap<i64, i64>) -> Self {
+    pub fn new(modreward: bool, bounty_spec: &MapImpl<i64, i64>) -> Self {
         Self {
             modreward,
             incomplete: bounty_spec
@@ -528,13 +528,8 @@ impl MonsterFormPortraits {
 pub struct MonsterFormSprites(Arc<Group>, i32, Vec<i32>);
 
 impl MonsterFormSprites {
-    fn process_sprite_action(
-        &self,
-        action: &str,
-        locked: bool,
-        this_server_url: &str,
-    ) -> SpriteUnion {
-        SpriteUnion::Sprite(Sprite {
+    fn process_sprite_action(&self, action: &str, locked: bool, this_server_url: &str) -> Sprite {
+        Sprite {
             anim_url: get_url(
                 AssetType::SpriteAnim(action),
                 this_server_url,
@@ -555,7 +550,7 @@ impl MonsterFormSprites {
             ),
             action: action.to_string(),
             locked,
-        })
+        }
     }
 
     async fn fetch_xml_and_make_action_map(
@@ -689,7 +684,7 @@ impl MonsterFormSprites {
             let action_copy_map = self.get_action_map(context).await?;
             // TODO: needed because of borrow in closure. can this be optimized?
             let action_copy_map_clone = action_copy_map.clone();
-            let sprites_iter =
+            let mut normal_sprites: HashMap<String, Sprite> =
                 iter_existing_sprite_files(&context, &self.0.sprite_files, self.1, &self.2)
                     .await?
                     .into_iter()
@@ -699,28 +694,46 @@ impl MonsterFormSprites {
                         if action_copy_map_clone.contains_key(&action) {
                             None
                         } else {
-                            Some(self.process_sprite_action(
-                                &action,
-                                locked,
-                                &context.this_server_url,
+                            let action_clone = action.clone();
+                            Some((
+                                action,
+                                self.process_sprite_action(
+                                    &action_clone,
+                                    locked,
+                                    &context.this_server_url,
+                                ),
                             ))
                         }
-                    });
-
-            // Add copy ofs
-            let sprites_iter =
-                sprites_iter.chain(action_copy_map.into_iter().map(|(action, copy_of)| {
-                    SpriteUnion::CopyOf(CopyOf {
-                        locked: self
-                            .0
-                            .sprite_files
-                            .get(&action)
-                            .copied()
-                            .unwrap_or_default(),
-                        action,
-                        copy_of: copy_of.to_string(),
                     })
-                }));
+                    .collect();
+
+            let mut copy_of_sprites: HashMap<String, CopyOf> = action_copy_map
+                .into_iter()
+                .map(|(action, copy_of)| {
+                    let action_clone = action.clone();
+                    (
+                        action,
+                        CopyOf {
+                            locked: self
+                                .0
+                                .sprite_files
+                                .get(&action_clone)
+                                .copied()
+                                .unwrap_or_default(),
+                            action: action_clone,
+                            copy_of: copy_of.to_string(),
+                        },
+                    )
+                })
+                .collect();
+
+            let sprites_iter = self.0.sprite_files.keys().filter_map(|k| {
+                if let Some(sprite) = normal_sprites.remove(k) {
+                    Some(SpriteUnion::Sprite(sprite))
+                } else {
+                    copy_of_sprites.remove(k).map(SpriteUnion::CopyOf)
+                }
+            });
 
             Ok(sprites_iter.collect())
         } else {
@@ -755,7 +768,11 @@ impl MonsterFormSprites {
                 )
                 .await?
                 .map(|locked| {
-                    self.process_sprite_action(&action, locked, &context.this_server_url)
+                    SpriteUnion::Sprite(self.process_sprite_action(
+                        &action,
+                        locked,
+                        &context.this_server_url,
+                    ))
                 }))
             }
         } else {
@@ -895,7 +912,7 @@ impl Monster {
             .collab
             .data()
             .tracker
-            .get(&(self.id as i64))
+            .get(&GroupId(self.id as i64))
             .ok_or_else(|| monster_not_found(self.id))
             .map(|monster| monster.name.clone())
     }
@@ -1069,56 +1086,11 @@ impl Credit {
     }
 
     #[graphql(
-        description = "Discord username or old-style name and discriminator (in the form Name#Discriminator [eg. Capypara#7887)), if this is a credit for a Discord profile, and the server can resolve the ID to a Discord profile."
+        description = "This used to return the Discord handle of this author, if applicable and possible. It will now always return null.",
+        deprecated = "This is no longer implemented and will always return null. It may or may not be re-introduced in future versions."
     )]
-    async fn discord_handle(&self, context: &Context) -> FieldResult<Option<String>> {
-        #[cfg(feature = "discord")]
-        {
-            if let Some(discord) = &context.discord {
-                context
-                    .cached_may_fail_chain(format!("discord_user|{}", self.id), || async {
-                        let id = self.id.parse().ok();
-                        if id.is_none() {
-                            return Ok(CacheBehaviour::NoCache(None));
-                        }
-                        let id = id.unwrap();
-                        let response = tokio::time::timeout(
-                            // We don't wait here for long. If we can't get it that quick,
-                            // it's not worth it.
-                            std::time::Duration::from_millis(500),
-                            discord.get_user(id),
-                        )
-                        .await;
-                        match response {
-                            Err(_) => Ok(CacheBehaviour::NoCache(None)),
-                            Ok(Ok(profile)) => {
-                                Ok(CacheBehaviour::Cache(profile.map(|user| {
-                                    // If the API reports a discriminator of "0", then this is a new-style username.
-                                    // XXX: Should probably update Discord API crate and use whatever mechanism they provide.
-                                    if &user.discriminator == "0" {
-                                        user.name
-                                    } else {
-                                        format!("{}#{}", user.name, user.discriminator)
-                                    }
-                                })))
-                            }
-                            Ok(Err(e)) => Err(FieldError::new(
-                                "Internal Server Error trying to resolve Discord ID",
-                                graphql_value!({
-                                    "details": (e.to_string())
-                                }),
-                            )),
-                        }
-                    })
-                    .await
-            } else {
-                Ok(None)
-            }
-        }
-        #[cfg(not(feature = "discord"))]
-        {
-            Ok(None)
-        }
+    async fn discord_handle(&self) -> FieldResult<Option<String>> {
+        Ok(None)
     }
 }
 
@@ -1152,22 +1124,13 @@ impl From<&CreditNamesRow> for Credit {
 pub struct Context {
     this_server_url: String,
     collab: Arc<SpriteCollab>,
-    #[allow(dead_code)] // potentially for future use.
-    reporting: Arc<Reporting>,
-    #[cfg(feature = "discord")]
-    discord: Option<Arc<crate::reporting::DiscordBot>>,
 }
 
 impl Context {
-    pub fn new(collab: Arc<SpriteCollab>, reporting: Arc<Reporting>) -> Self {
-        #[cfg(feature = "discord")]
-        let discord = reporting.discord_bot.clone();
+    pub fn new(collab: Arc<SpriteCollab>) -> Self {
         Context {
             this_server_url: SystemConfig::Address.get_or_none().unwrap_or_default(),
             collab,
-            reporting,
-            #[cfg(feature = "discord")]
-            discord,
         }
     }
 }
@@ -1274,14 +1237,6 @@ pub struct Query;
 
 #[graphql_object(Context = Context)]
 impl Query {
-    #[graphql(
-        description = "Version of this API.",
-        deprecated = "Use `meta` instead."
-    )]
-    fn api_version(_context: &Context) -> &str {
-        API_VERSION
-    }
-
     #[graphql(description = "Meta information about the server and state of the assets.")]
     fn meta(_context: &Context) -> Meta {
         Meta
@@ -1315,11 +1270,11 @@ impl Query {
         }
     }
 
-    #[graphql(
-        description = "Retrieve a list of monsters.",
-        arguments(filter(description = "Monster IDs to limit the request to.",))
-    )]
-    fn monster(context: &Context, filter: Option<Vec<i32>>) -> FieldResult<Vec<Monster>> {
+    #[graphql(description = "Retrieve a list of monsters.")]
+    fn monster(
+        context: &Context,
+        #[graphql(description = "Monster IDs to limit the request to.")] filter: Option<Vec<i32>>,
+    ) -> FieldResult<Vec<Monster>> {
         Ok(context
             .collab
             .data()
@@ -1327,12 +1282,12 @@ impl Query {
             .keys()
             .filter(|v| {
                 if let Some(filter) = &filter {
-                    filter.contains(&(**v as i32))
+                    filter.contains(&(***v as i32))
                 } else {
                     true
                 }
             })
-            .map(|idx| Monster { id: *idx as i32 })
+            .map(|idx| Monster { id: **idx as i32 })
             .collect())
     }
 
@@ -1365,12 +1320,7 @@ impl Query {
         }
     }
 
-    #[graphql(
-        description = "Retrieve a list of credits.",
-        arguments(filter(
-            description = "Credit IDs (Discord ID or absentee ID) to limit the request to.",
-        ))
-    )]
+    #[graphql(description = "Retrieve a list of credits.")]
     fn credit(context: &Context) -> FieldResult<Vec<Credit>> {
         Ok(context
             .collab
