@@ -614,9 +614,9 @@ dependencies = [
 
 [[package]]
 name = "fred"
-version = "9.0.3"
+version = "9.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "915e065b377f6e16d5c01eae96bf31eeaf81e1e300b76f938761b3c21307cad8"
+checksum = "1caa4f052f1ee1b987c2089e0524aeb9a0e33cd7be0a184667aca2e4cbf17579"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -624,6 +624,7 @@ dependencies = [
  "bytes-utils",
  "crossbeam-queue",
  "float-cmp",
+ "fred-macros",
  "futures",
  "log",
  "parking_lot",
@@ -636,6 +637,17 @@ dependencies = [
  "tokio-util",
  "url",
  "urlencoding",
+]
+
+[[package]]
+name = "fred-macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1458c6e22d36d61507034d5afecc64f105c1d39712b7ac6ec3b352c423f715cc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
