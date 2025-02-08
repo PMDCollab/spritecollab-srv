@@ -76,7 +76,7 @@ pub trait ScCache: Send + Sync {
 }
 
 #[async_trait]
-impl<'a, B: ScCache> ScCache for &'a B {
+impl<B: ScCache> ScCache for &B {
     type Error = B::Error;
 
     async fn cached_may_fail<S, Fn, Ft, T, E>(

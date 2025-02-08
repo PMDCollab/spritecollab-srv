@@ -162,7 +162,7 @@ where
 pub struct MonsterFormCollector<'a>(&'a Group);
 
 impl<'a> MonsterFormCollector<'a> {
-    pub fn collect(tracker: &'a Tracker, monster_idx: i32) -> Option<MonsterFormCollector> {
+    pub fn collect(tracker: &'a Tracker, monster_idx: i32) -> Option<MonsterFormCollector<'a>> {
         tracker
             .get(&GroupId(monster_idx as i64))
             .map(MonsterFormCollector)
