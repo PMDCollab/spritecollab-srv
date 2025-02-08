@@ -59,7 +59,7 @@ pub trait CloneToVec<T> {
     fn clone_to_vec(&self) -> Vec<T>;
 }
 
-impl<'a, T: ToOwned + Copy> CloneToVec<T> for Cow<'a, [T]>
+impl<T: ToOwned + Copy> CloneToVec<T> for Cow<'_, [T]>
 where
     [T]: ToOwned,
 {
@@ -74,7 +74,7 @@ impl<T: Copy> CloneToVec<T> for Vec<T> {
     }
 }
 
-impl<'a, T: Copy> CloneToVec<T> for &'a Vec<T> {
+impl<T: Copy> CloneToVec<T> for &Vec<T> {
     fn clone_to_vec(&self) -> Vec<T> {
         self.to_vec()
     }

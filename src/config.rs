@@ -9,8 +9,6 @@ pub enum Config {
     Workdir,
     RedisHost,
     RedisPort,
-    DiscordToken,
-    DiscordChannels,
 }
 
 impl Config {
@@ -38,12 +36,6 @@ impl Config {
             Config::Workdir => var("SCSRV_WORKDIR").expect("SCSRV_WORKDIR is not set"),
             Config::RedisHost => var("SCSRV_REDIS_HOST").expect("SCSRV_REDIS_HOST is not set"),
             Config::RedisPort => var("SCSRV_REDIS_PORT").expect("SCSRV_REDIS_PORT is not set"),
-            Config::DiscordToken => {
-                var("SCSRV_DISCORD_TOKEN").expect("SCSRV_DISCORD_TOKEN is not set")
-            }
-            Config::DiscordChannels => {
-                var("SCSRV_DISCORD_CHANNELS").expect("SCSRV_DISCORD_CHANNELS is not set")
-            }
         }
     }
 
@@ -55,8 +47,6 @@ impl Config {
             Config::Workdir => var("SCSRV_WORKDIR").ok(),
             Config::RedisHost => var("SCSRV_REDIS_HOST").ok(),
             Config::RedisPort => var("SCSRV_REDIS_PORT").ok(),
-            Config::DiscordToken => var("SCSRV_DISCORD_TOKEN").ok(),
-            Config::DiscordChannels => var("SCSRV_DISCORD_CHANNELS").ok(),
         }
     }
 

@@ -11,8 +11,8 @@ use std::time::Duration;
 use anyhow::{anyhow, Error};
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
-use fred::prelude::*;
-use fred::types::RedisKey;
+use fred::prelude::{ClientLike, KeysInterface, ReconnectPolicy};
+use fred::types::Key;
 use git2::build::CheckoutBuilder;
 use git2::{Repository, ResetType};
 use log::{debug, error, info, warn};
@@ -116,15 +116,16 @@ pub struct SpriteCollab {
     state: Mutex<State>,
     meta: Mutex<RefCell<Meta>>,
     current_data: RwLock<SpriteCollabData>,
-    redis: RedisClient,
+    redis: fred::clients::Client,
 }
 
 impl SpriteCollab {
     pub async fn new((redis_url, redis_port): (String, u16)) -> Arc<Self> {
-        let config = RedisConfig::from_url(&format!("redis://{}:{}", redis_url, redis_port))
-            .expect("Invalid Redis config.");
+        let config =
+            fred::prelude::Config::from_url(&format!("redis://{}:{}", redis_url, redis_port))
+                .expect("Invalid Redis config.");
         let policy = ReconnectPolicy::new_linear(10, 10000, 1000);
-        let client = RedisClient::new(config, None, None, Some(policy));
+        let client = fred::clients::Client::new(config, None, None, Some(policy));
         client.connect();
         client
             .wait_for_connect()
@@ -208,7 +209,7 @@ impl ScCache for SpriteCollab {
         func: Fn,
     ) -> Result<Result<T, E>, Self::Error>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,
@@ -223,7 +224,7 @@ impl ScCache for SpriteCollab {
                     let save_string = serde_json::to_string(&v);
                     match save_string {
                         Ok(save_string) => {
-                            let r: Result<(), RedisError> = self
+                            let r: Result<(), fred::prelude::Error> = self
                                 .redis
                                 .set(cache_key.as_ref(), save_string, None, None, false)
                                 .await;

@@ -73,7 +73,7 @@ async fn do_make_portrait_sheet(
     for grp_emotion in group.portrait_files.keys() {
         if emotions.emotion_positions.contains_key(grp_emotion) {
             let (x, y) = emotions.emotion_positions.get(grp_emotion).unwrap();
-            let portrait_path = portrait_base_path.join(&format!("{}.png", grp_emotion));
+            let portrait_path = portrait_base_path.join(format!("{}.png", grp_emotion));
             if let Ok(portrait_img) = image::open(&portrait_path) {
                 img.copy_from(
                     &portrait_img,
