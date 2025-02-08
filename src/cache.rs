@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use fred::types::RedisKey;
+use fred::types::Key;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::convert::Infallible;
@@ -21,7 +21,7 @@ pub trait ScCache: Send + Sync {
     /// Do a cache lookup, on miss, calculate the value.
     async fn cached<S, Fn, Ft, T>(&self, cache_key: S, func: Fn) -> Result<T, Self::Error>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = CacheBehaviour<T>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,
@@ -49,7 +49,7 @@ pub trait ScCache: Send + Sync {
         func: Fn,
     ) -> Result<T, Self::Error>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = Result<CacheBehaviour<T>, Self::Error>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,
@@ -68,7 +68,7 @@ pub trait ScCache: Send + Sync {
         func: Fn,
     ) -> Result<Result<T, E>, Self::Error>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,
@@ -85,7 +85,7 @@ impl<B: ScCache> ScCache for &B {
         func: Fn,
     ) -> Result<Result<T, E>, Self::Error>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,

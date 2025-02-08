@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use fred::types::RedisKey;
+use fred::types::Key;
 use itertools::Itertools;
 use juniper::{
     graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
@@ -1145,7 +1145,7 @@ impl ScCache for Context {
         func: Fn,
     ) -> FieldResult<Result<T, E>>
     where
-        S: AsRef<str> + Into<RedisKey> + Send + Sync,
+        S: AsRef<str> + Into<Key> + Send + Sync,
         Fn: (FnOnce() -> Ft) + Send,
         Ft: Future<Output = Result<CacheBehaviour<T>, E>> + Send,
         T: DeserializeOwned + Serialize + Send + Sync,

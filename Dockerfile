@@ -1,4 +1,4 @@
-FROM rust:slim-buster as builder
+FROM rust:slim-bookworm as builder
 
 RUN apt-get update && apt-get install -y \
   libssl-dev \
@@ -22,7 +22,7 @@ RUN cargo build --release
 RUN strip /src/spritecollab-srv/target/release/spritecollab-srv
 
 
-FROM rust:slim-buster as build
+FROM rust:slim-bookworm as build
 
 ARG APP=/usr/src/app
 
