@@ -12,7 +12,7 @@ use std::{convert::Infallible, sync::Arc};
 use http_body_util::Empty;
 use hyper::body::Bytes;
 use hyper::http::HeaderValue;
-use hyper::{service::service_fn, Method, Response, StatusCode};
+use hyper::{Method, Response, StatusCode, service::service_fn};
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use hyper_util::server::conn::auto;
 use hyper_util::server::graceful::GracefulShutdown;

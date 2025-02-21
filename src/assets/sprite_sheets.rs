@@ -125,7 +125,10 @@ async fn get_sprite_frames(
     for anim_node in &xml.anims.anim {
         if anim_node.copy_of.is_none() {
             if anim_node.frame_width.is_none() || anim_node.frame_height.is_none() {
-                return Err(anyhow!("The AnimData.xml for this sprite is invalid: FrameWidth or FrameHeight missing for {}", anim_node.name));
+                return Err(anyhow!(
+                    "The AnimData.xml for this sprite is invalid: FrameWidth or FrameHeight missing for {}",
+                    anim_node.name
+                ));
             }
             anim_dims.insert(
                 &anim_node.name,

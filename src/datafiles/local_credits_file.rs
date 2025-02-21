@@ -1,4 +1,4 @@
-use crate::datafiles::{cleanup_discord_id, DataReadResult};
+use crate::datafiles::{DataReadResult, cleanup_discord_id};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use csv::ReaderBuilder;
 use serde::de::Error;

@@ -14,10 +14,10 @@ use tokio::fs;
 use zip::ZipWriter;
 
 use crate::assets::portrait_sheets::{
-    make_portrait_recolor_sheet, make_portrait_sheet, PortraitSheetEmotions,
+    PortraitSheetEmotions, make_portrait_recolor_sheet, make_portrait_sheet,
 };
 use crate::assets::sprite_sheets::make_sprite_recolor_sheet;
-use crate::assets::url::{match_url, AssetType};
+use crate::assets::url::{AssetType, match_url};
 use crate::assets::util::{force_non_shiny_group, join_monster_and_form};
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
