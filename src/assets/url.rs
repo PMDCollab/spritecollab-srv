@@ -1,5 +1,5 @@
-use crate::assets::util::{force_shiny_group, join_monster_and_form};
 use crate::Config;
+use crate::assets::util::{force_shiny_group, join_monster_and_form};
 use route_recognizer::Router;
 use std::collections::VecDeque;
 

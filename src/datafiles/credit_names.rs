@@ -1,4 +1,4 @@
-use crate::datafiles::{cleanup_discord_id, DataReadError, DataReadResult};
+use crate::datafiles::{DataReadError, DataReadResult, cleanup_discord_id};
 use crate::search::fuzzy_find;
 use csv::ReaderBuilder;
 use serde::Deserialize;

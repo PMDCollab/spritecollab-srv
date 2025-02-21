@@ -10,8 +10,8 @@ use chrono::{DateTime, Utc};
 use fred::types::Key;
 use itertools::Itertools;
 use juniper::{
-    graphql_object, graphql_value, FieldError, FieldResult, GraphQLEnum, GraphQLObject,
-    GraphQLUnion,
+    FieldError, FieldResult, GraphQLEnum, GraphQLObject, GraphQLUnion, graphql_object,
+    graphql_value,
 };
 #[allow(unused_imports)]
 use log::warn;
@@ -19,10 +19,10 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::fs_check::{
-    get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
-    iter_existing_portrait_files, iter_existing_sprite_files, AssetCategory,
+    AssetCategory, get_existing_portrait_file, get_existing_sprite_file, get_local_credits_file,
+    iter_existing_portrait_files, iter_existing_sprite_files,
 };
-use crate::assets::url::{get_url, AssetType};
+use crate::assets::url::{AssetType, get_url};
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config as SystemConfig;
 use crate::datafiles::anim_data_xml::AnimDataXml;
@@ -32,7 +32,7 @@ use crate::datafiles::local_credits_file::LocalCreditRow;
 use crate::datafiles::parse_credit_id;
 use crate::datafiles::sprite_config::SpriteConfig;
 use crate::datafiles::tracker::{
-    fuzzy_find_tracker, FormMatch, Group, MapImpl, MonsterFormCollector,
+    FormMatch, Group, MapImpl, MonsterFormCollector, fuzzy_find_tracker,
 };
 use crate::sprite_collab::SpriteCollab;
 
@@ -283,7 +283,7 @@ impl MonsterBounty {
             full: bounty_spec.get(&(Phase::Full as i64)).map(|x| *x as i32),
             other: bounty_spec
                 .iter()
-                .filter(|(&k, _)| {
+                .filter(|&(&k, _)| {
                     k != (Phase::Incomplete as i64)
                         && k != (Phase::Exists as i64)
                         && k != (Phase::Full as i64)

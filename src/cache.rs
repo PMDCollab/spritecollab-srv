@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use fred::types::Key;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::convert::Infallible;
 use std::future::Future;
 use std::hint::unreachable_unchecked;

@@ -1,8 +1,8 @@
 use crate::SpriteCollab;
 use log::info;
 use std::mem::take;
-use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
+use std::sync::mpsc::{Sender, channel};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;

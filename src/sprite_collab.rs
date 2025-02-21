@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 use std::time::Duration;
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use fred::prelude::{ClientLike, KeysInterface, ReconnectPolicy};
@@ -16,18 +16,18 @@ use fred::types::Key;
 use git2::build::CheckoutBuilder;
 use git2::{Repository, ResetType};
 use log::{debug, error, info, warn};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tokio::fs::{create_dir_all, remove_dir_all};
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
 use crate::cache::{CacheBehaviour, ScCache};
 use crate::config::Config;
-use crate::datafiles::credit_names::{read_credit_names, CreditNames};
+use crate::datafiles::credit_names::{CreditNames, read_credit_names};
 use crate::datafiles::group_id::GroupId;
-use crate::datafiles::sprite_config::{read_sprite_config, SpriteConfig};
-use crate::datafiles::tracker::{read_tracker, Group, MapImpl, Tracker};
+use crate::datafiles::sprite_config::{SpriteConfig, read_sprite_config};
+use crate::datafiles::tracker::{Group, MapImpl, Tracker, read_tracker};
 use crate::datafiles::{read_and_report_error, try_read_in_anim_data_xml};
 
 const GIT_REPO_DIR: &str = "spritecollab";
@@ -141,7 +141,9 @@ impl SpriteCollab {
             Some(v) => RwLock::new(v),
             None => {
                 // Try going back in time in the repo and updating.
-                error!("Failed getting the newest data. Checking out old data until data processing works.");
+                error!(
+                    "Failed getting the newest data. Checking out old data until data processing works."
+                );
                 let repo_path = PathBuf::from(Config::Workdir.get()).join(GIT_REPO_DIR);
                 loop {
                     let new_commit = try_checkout_previous_commit(&repo_path)

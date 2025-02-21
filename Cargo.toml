@@ -3,8 +3,9 @@ name = "spritecollab-srv"
 description = "GraphQL server for interacting with assets and metadata of SpriteCollab."
 authors = ["Marco 'Capypara' Köpcke <hello@capypara.de>"]
 license = "GPL-3.0-or-later"
-version = "0.6.1"
-edition = "2021"
+version = "0.7.0"
+edition = "2024"
+rust-version = "1.85.0"
 
 [dependencies]
 log = "0.4"

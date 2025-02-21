@@ -5,13 +5,13 @@ use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::Config;
 use crate::assets::util::join_monster_and_form;
 use crate::cache::CacheBehaviour;
 use crate::cache::ScCache;
-use crate::datafiles::local_credits_file::{get_credits, LocalCreditRow};
+use crate::datafiles::local_credits_file::{LocalCreditRow, get_credits};
 use crate::datafiles::tracker::MapImpl;
 use crate::datafiles::{DataReadError, DataReadResult};
-use crate::Config;
 
 #[derive(Clone, Copy, Debug)]
 pub enum AssetCategory {

@@ -1,5 +1,5 @@
-use crate::assets::util::join_monster_and_form;
 use crate::Config;
+use crate::assets::util::join_monster_and_form;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
