@@ -1,25 +1,19 @@
 SpriteCollab GraphQL Server
 ===========================
 
-This is a GraphQL server for accessing the 
-[SpriteCollab](https://github.com/PMDCollab/SpriteCollab) ([web](https://sprites.pmdcollab.org)) 
+This is a GraphQL server for accessing the
+[SpriteCollab](https://github.com/PMDCollab/SpriteCollab) ([web](https://sprites.pmdcollab.org))
 project.
 
 It is hosted at https://spriteserver.pmdcollab.org
 
 To run this server yourself, configure the `.env` file. The variable names should
-be self-explanatory. 
+be self-explanatory.
 
 The server is running on port `3000`*. It does not support HTTPS and is meant to be
 run behind a reverse proxy. The GraphQL endpoint is at `/graphql`.
 
 *: With the Docker Compose setup in this repo, it will listen bind to host port `31114`.
-
-`discord` feature
------------------
-Everything related to Discord is optional, and is used to send
-error reports to Discord servers, and if that is enabled the bot can also resolve
-Discord IDs in credit entries.
 
 Schema
 ------

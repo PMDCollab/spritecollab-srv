@@ -119,7 +119,7 @@ pub fn get_url(
 }
 
 /// Matches a URL, if it matches returns a tuple of (monster id, form path, asset type)
-pub fn match_url(path: &str) -> Option<(i32, VecDeque<i32>, AssetType)> {
+pub fn match_url(path: &str) -> Option<(i32, VecDeque<i32>, AssetType<'_>)> {
     let mut router = Router::new();
 
     // This is a bit of a hack, but we treat - as / to easily support

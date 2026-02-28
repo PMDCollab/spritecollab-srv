@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Durations {
-    #[serde(rename = "$value")]
+    #[serde(rename = "#content")]
     pub duration: Option<Vec<i64>>,
 }
 
@@ -31,7 +31,7 @@ pub struct Anim {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 pub struct Anims {
-    #[serde(rename = "$value")]
+    #[serde(rename = "#content")]
     pub anim: Vec<Anim>,
 }
 

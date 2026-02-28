@@ -1,4 +1,4 @@
-FROM rust:slim-bookworm as builder
+FROM rust:slim-trixie as builder
 
 RUN apt-get update && apt-get install -y \
   libssl-dev \
@@ -22,7 +22,7 @@ RUN cargo build --release
 RUN strip /src/spritecollab-srv/target/release/spritecollab-srv
 
 
-FROM rust:slim-bookworm as build
+FROM rust:slim-trixie as build
 
 ARG APP=/usr/src/app
 
@@ -31,12 +31,13 @@ EXPOSE 34434
 ENV TZ=Etc/UTC \
     APP_USER=spritecollab
 
-RUN adduser --system --group $APP_USER
-
 RUN apt-get update && apt-get install -y \
   ca-certificates \
   tzdata \
+  adduser \
   && rm -rf /var/lib/apt/lists/*
+
+RUN adduser --system --group $APP_USER
 
 
 COPY --from=builder /src/spritecollab-srv/target/release/spritecollab-srv ${APP}/spritecollab-srv
