@@ -13,8 +13,8 @@ use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset, TimeZone, Utc};
 use fred::prelude::{ClientLike, KeysInterface, ReconnectPolicy};
 use fred::types::Key;
-use git2::build::CheckoutBuilder;
-use git2::{Repository, ResetType};
+use git2::build::{CheckoutBuilder, RepoBuilder};
+use git2::{FetchOptions, Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -374,7 +374,14 @@ fn try_update_repo(path: &Path) -> Result<Repository, Error> {
 
 fn create_repo(path: &Path, clone_url: &str) -> Result<Repository, Error> {
     info!("Cloning SpriteCollab repo...");
-    let repo = Repository::clone(clone_url, path)?;
+    
+    // Use FetchOptions to enable shallow cloning (the repo is too big to handle otherwise)
+    let mut fo = FetchOptions::new();
+    fo.depth(1);
+    let mut builder = RepoBuilder::new();
+    builder.fetch_options(fo);
+    
+    let repo = builder.clone(clone_url, path)?;
     info!("Cloning SpriteCollab repo. Done!");
     Ok(repo)
 }
