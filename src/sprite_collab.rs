@@ -374,13 +374,13 @@ fn try_update_repo(path: &Path) -> Result<Repository, Error> {
 
 fn create_repo(path: &Path, clone_url: &str) -> Result<Repository, Error> {
     info!("Cloning SpriteCollab repo...");
-    
+
     // Use FetchOptions to enable shallow cloning (the repo is too big to handle otherwise)
     let mut fo = FetchOptions::new();
     fo.depth(1);
     let mut builder = RepoBuilder::new();
     builder.fetch_options(fo);
-    
+
     let repo = builder.clone(clone_url, path)?;
     info!("Cloning SpriteCollab repo. Done!");
     Ok(repo)
