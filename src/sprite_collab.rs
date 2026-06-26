@@ -18,7 +18,7 @@ use git2::{FetchOptions, Repository, ResetType};
 use log::{debug, error, info, warn};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::fs::{create_dir_all, remove_dir_all};
+use tokio::fs::create_dir_all;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 
@@ -298,6 +298,11 @@ async fn refresh_data_internal_do(
                         "Failed to update repo: {}",
                         clone_e
                     );
+
+                    if !repo_path.join(".git").exists() {
+                        return Err(anyhow!("Missing .git directory"));
+                    }
+                    repo = Some(Repository::open(&repo_path)?);
                 }
             }
         } else {
