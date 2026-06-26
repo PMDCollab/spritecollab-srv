@@ -293,15 +293,11 @@ async fn refresh_data_internal_do(
             match try_update_repo(&repo_path) {
                 Ok(v) => repo = Some(v),
                 Err(clone_e) => {
-                    // If this fails, throw the repo away (if applicable) and clone it new.
+                    // If this fails, do nothing and wait for the next refresh
                     warn!(
-                        "Failed to update repo, deleting and cloning it again: {}",
+                        "Failed to update repo: {}",
                         clone_e
                     );
-                    if let Err(e) = remove_dir_all(&repo_path).await {
-                        warn!("Failed to delete repo directory: {}", e);
-                    }
-                    repo = Some(create_repo(&repo_path, &Config::GitRepo.get())?);
                 }
             }
         } else {
