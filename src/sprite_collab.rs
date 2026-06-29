@@ -294,10 +294,7 @@ async fn refresh_data_internal_do(
                 Ok(v) => repo = Some(v),
                 Err(clone_e) => {
                     // If this fails, do nothing and wait for the next refresh
-                    warn!(
-                        "Failed to update repo: {}",
-                        clone_e
-                    );
+                    warn!("Failed to update repo: {}", clone_e);
 
                     if !repo_path.join(".git").exists() {
                         return Err(anyhow!("Missing .git directory"));
